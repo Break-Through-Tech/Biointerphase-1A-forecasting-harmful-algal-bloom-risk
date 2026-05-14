@@ -1,121 +1,166 @@
-# AI Studio Challenge Project Title
-
-> 💡 **Note for the team:** This is just a template. Update the above title with your AI Studio Challenge Project name. Remove all guidance notes and example text in this template and populate this README with your own content. You can work on this README throughout AI Studio, and get feedback from your AI Studio Coach and Challenge Advisor before finalizing it.  
-
----
-
-### 👥 **Team Members**
-
-**Example:**
-
-| Name             | GitHub Handle | Contribution                                                             |
-|------------------|---------------|--------------------------------------------------------------------------|
-| Taylor Nguyen    | @taylornguyen | Data exploration, visualization, overall project coordination            |
-| Jordan Ramirez   | @jramirez     | Data collection, exploratory data analysis (EDA), dataset documentation  |
-| Amina Hassan     | @aminahassan  | Data preprocessing, feature engineering, data validation                 |
-| Priya Mehta      | @pmehta       | Model selection, hyperparameter tuning, model training and optimization  |
-| Chris Park       | @chrispark    | Model evaluation, performance analysis, results interpretation           |
-
----
-
-## 🎯 **Project Highlights**
-
-**Example:**
-
-- Developed a machine learning model using `[model type/technique]` to address `[challenge project task]`.
-- Achieved `[key metric or result]`, demonstrating `[value or impact]` for `[host company]`.
-- Generated actionable insights to inform business decisions at `[host company or stakeholders]`.
-- Implemented `[specific methodology]` to address industry constraints or expectations.
+> ## Challenge Advisor: Update & Finalize Your Project Overview
+>
+> > 💡 **These grey text instructions are just for you, the team's Challenge Advisor; please delete them once you have completed the steps below.**
+>
+> We've pre-populated this Challenge Project Overview page — which is what will be shared with your Break Through Tech student team in August — using the details from your submission form. In order for your project to be finalized and assigned to a team, please:
+>
+> 1. **Send us your GitHub username** so we can add you as a Collaborator to this repo, which will enable you to make edits. If you don't have a username, you can create a free account [here](https://github.com/signup). Once you are ready to share your username, simply reply to the email that sent you to this repo. Once we receive your GitHub username, you will get an email inviting you to join this repo as a Collaborator and can begin making edits. 
+> 2. **Review all sections below** and update or expand any content as needed, making sure to address the SME Feedback in the section immediately below. Look for square brackets to find the places below that require additional inputs from you (e.g., "About [Company / Org Name]").
+> 3. **Add your dataset** to the [data folder](data) in this repo.
+> 4. **Close the Issue assigned to you in this repo** to let us know that you have made your edits and the overview page is ready for final review. You can do this by going to the _Issues_ tab in the top left section of the menu above, add a comment that says "CA review complete", and click the button to Close the Issue. 
+>
+> If you're unfamiliar with how to edit a page like this in GitHub, check out [this tutorial](https://ubc-lib-geo.github.io/gis-workshop-waml-template/content/handson/edit-readme.html) for a quick overview (start with step 2 and only edit this page), and [this guide](https://ubc-lib-geo.github.io/gis-workshop-waml-template/content/markdown.html) on how to use Markdown to compose text. 
+> 
+> ---
+>
+> ### 🔍 SME Feedback from the BTT Evaluation Team
+>
+> *Please address the following by editing this page:*
+>
+> - See advisor feedback section below for detailed technical adjustments.
+> - [Additional feedback item]
+> - [Additional feedback item]
+>
+> ---
+>
 
 ---
 
-## 👩🏽‍💻 **Setup and Installation**
+# Forecasting Harmful Algal Bloom (HAB) Risk Using Multi-Source Water Quality and Weather Data
 
-**Provide step-by-step instructions so someone else can run your code and reproduce your results. Depending on your setup, include:**
-
-* How to clone the repository
-* How to install dependencies
-* How to set up the environment
-* How to access the dataset(s)
-* How to run the notebook or scripts
+**Company / Org:** Biointerphase  
+**Challenge Advisor:** Alyssa Long, along@biointerphase.com  
+**Program:** Break Through Tech AI Studio - Fall 2026
 
 ---
 
-## 🏗️ **Project Overview**
+## 🏢 About Biointerphase
 
-**Describe:**
-
-- How this project is connected to the Break Through Tech AI Program
-- Your AI Studio host company and the project objective and scope
-- The real-world significance of the problem and the potential impact of your work
+Biointerphase is committed to advancing environmental health through innovative solutions in the water quality sector. Our focus lies in utilizing data-driven techniques to address biological risks in aquatic systems, supporting sustainable practices and policy developments.
 
 ---
 
-## 📊 **Data Exploration**
+## 🎯 The Challenge
 
-**You might consider describing the following (as applicable):**
+### Project Summary
+In this project, you will use publicly available water quality, meteorological, and satellite-derived environmental data and machine learning techniques such as classification, regression, and time-series analysis to build models that predict the risk, occurrence, or growth of harmful algal blooms. This will help our company address the challenge of understanding and forecasting biological water quality risks in order to inform monitoring and mitigation strategies.
 
-* The dataset(s) used: origin, format, size, type of data
-* Data exploration and preprocessing approaches
-* Insights from your Exploratory Data Analysis (EDA)
-* Challenges and assumptions when working with the dataset(s)
+### Success Criteria
+Model performance (Classification: accuracy, precision/recall, F1, ROC-AUC; Regression: RMSE, MAE, R2); integration of multi-source environmental data; clear interpretation of key environmental drivers; and a reproducible, well-documented Python workflow.
 
-**Potential visualizations to include:**
+### Project Milestones
 
-* Plots, charts, heatmaps, feature visualizations, sample dataset images
+Use these milestones to guide your work. Your team will create a **GitHub Projects board** to track tasks within each milestone.
 
----
+| Month | Milestone | Key Activities |
+|-------|-----------|----------------|
+| **September** | Data Understanding | Explore dataset, handle missing values, document findings |
+| **October** | Model Development | Train baseline model, experiment with approaches, iterate |
+| **November** | Evaluation & Presentation | Finalize model, prepare presentation, document results |
 
-## 🧠 **Model Development**
-
-**You might consider describing the following (as applicable):**
-
-* Model(s) used (e.g., CNN with transfer learning, regression models)
-* Feature selection and Hyperparameter tuning strategies
-* Training setup (e.g., % of data for training/validation, evaluation metric, baseline performance)
-
+> **Note for the team:** Please create a GitHub Projects board in this repository to break these milestones into weekly tasks. Go to the **Projects** tab → **New project** → Choose **Board** → Add columns for each month.
 
 ---
 
-## 📈 **Results & Key Findings**
+## 📊 Dataset
 
-**You might consider describing the following (as applicable):**
+**Name and Source:** Publicly available multi-source datasets focused on Florida waters around Mote Marine Laboratory  
+**Format:** CSV, TSV, JSON  
+**Size:** 1gb to 5gb  
+**Location:** [Link to dataset or instructions for accessing it]
 
-* Performance metrics (e.g., Accuracy, F1 score, RMSE)
-* How your model performed
-* Insights from evaluating model fairness
-
-**Potential visualizations to include:**
-
-* Confusion matrix, precision-recall curve, feature importance plot, prediction distribution, outputs from fairness or explainability tools
-
----
-
-## 🚀 **Next Steps**
-
-**You might consider addressing the following (as applicable):**
-
-* What are some of the limitations of your model?
-* What would you do differently with more time/resources?
-* What additional datasets or techniques would you explore?
+### Key Details
+- Publicly available multi-source datasets including water quality data (temperature, nutrients, chlorophyll), meteorological data (wind), and satellite-derived environmental data.
+- [Any known limitations or preprocessing needed]
+- [Link to data dictionary or documentation, if available]
 
 ---
 
-## 📝 **License**
+## 🛠️ Suggested Approach
 
-Specify how your project can be used by others. Choose an appropriate license and link it here (e.g., MIT, Apache 2.0). Make sure your Challenge Advisor approves of the selected license type. 
+**ML Problem Type:** Classification, Regression, Time-Series Analysis
 
-**Example:**
-This project is licensed under the MIT License.
+**Recommended Libraries:**
+- Classification
+- Regression
+- Time-Series Analysis
+- Deep Learning / Neural Networks
+- Transfer Learning / Pre-trained Models
+- Random Forest
+- Gradient Boosting
+- Python
+
+**Evaluation Metrics:**
+- Accuracy, Precision/Recall, RMSE
 
 ---
 
-## 📄 **References** (Optional but encouraged)
+## 📚 Resources to Get Started
 
-Cite relevant papers, articles, or resources that supported your project.
+The following resources will help your team understand the problem space and potential technical approaches for this project:
+
+**Background Reading:**
+- [Link to an article or blog post about the problem domain]
+- [Link to an industry report or case study]
+
+**Technical Tutorials:**
+- [Link to a free tutorial on the ML technique(s) involved]
+- [Link to documentation for a key library or tool]
+
+**Code Examples:**
+- [Link to a relevant GitHub repo]
+- [Link to a sample implementation or starter code]
+
+**Other:**
+- [Links to any additional resources — e.g., papers, videos, podcasts, etc.]
+
+*Feel free to explore beyond these, and share anything interesting you find with me!*
 
 ---
 
-## 🙏 **Acknowledgements** (Optional but encouraged)
+## 🤝 How We'll Work Together
 
-Thank your Challenge Advisor, host company representatives, TA, and others who supported your project.
+**Check-ins:** During our biweekly 60-min AI Studio Lab Section meeting block (2nd and 4th week of every month)  
+**Communication:** Slack (Break Through Tech workspace)  
+**Response time:** Within 48 hours on weekdays  
+
+**Recommended Tools:**
+- **Coding:** Google Colab
+- **Collaboration:** GitHub, Notion
+- **Virtual Meetings:** Zoom, Google Meet
+
+---
+
+## 🚀 Getting Started
+
+1. **Review this overview document** and note any questions for our first meeting
+2. **Begin reviewing the dataset** using the link above
+3. **Read the GitHub Projects documentation** [here](https://docs.github.com/en/issues/planning-and-tracking-with-projects/learning-about-projects/about-projects)
+
+I'm excited to work with you!
+
+---
+
+## ❓ Questions?
+
+Please bring any questions to our first meeting during the week of August 24th (Break Through Tech's Bridge to Studio - Session B).
+
+---
+
+## 📋 BTT Internal Evaluation Notes
+*(This section is for BTT staff only — remove before sharing with students)*
+
+| Check | Status | Notes |
+|-------|--------|-------|
+| Python Compatibility | GREEN | The project uses Python extensively throughout its stack, making it compatible with the student skillset. |
+| Data Readiness | GREEN | The data is publicly available and anticipated to be ready for use, falling well within manageable size limits. |
+| Resource Check | GREEN | Utilizes free-tier tools like Google Colab, ensuring accessibility for students without specialized hardware. |
+
+**Student Fit Score:** 8/10  
+**Technical Depth Score:** 7/10  
+**Overall Recommendation:** REVISE
+
+**Advisor Feedback Draft:**
+The project demonstrates significant potential by working on an impactful and timely issue, and it aligns well with the foundational skills of our students. However, I recommend simplifying the ML models or focusing on fewer modeling techniques to enhance student engagement and learning outcomes. Further, consider framing the success metrics to prioritize practical usability of the models in real-world applications.
+
+---
