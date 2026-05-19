@@ -24,9 +24,9 @@
 
 | Check | Status | Notes |
 |-------|--------|-------|
-| Python Compatibility | GREEN | The project uses Python extensively throughout its stack, making it compatible with the student skillset. |
-| Data Readiness | GREEN | The data is publicly available and anticipated to be ready for use, falling well within manageable size limits. |
-| Resource Check | GREEN | Utilizes free-tier tools like Google Colab, ensuring accessibility for students without specialized hardware. |
+| Python Compatibility | 🟢 | The project uses Python extensively throughout its stack, making it compatible with the student skillset. |
+| Data Readiness | 🟢 | The data is publicly available and anticipated to be ready for use, falling well within manageable size limits. |
+| Resource Check | 🟢 | Utilizes free-tier tools like Google Colab, ensuring accessibility for students without specialized hardware. |
 
 **Student Fit Score:** 8/10  
 **Technical Depth Score:** 7/10  
