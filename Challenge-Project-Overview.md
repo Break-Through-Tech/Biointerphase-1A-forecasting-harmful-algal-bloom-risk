@@ -18,16 +18,23 @@
 
 ---
 
-> ### 🔍 SME Feedback from the BTT Evaluation Team
->
-> *Please address the following by editing this page:*
->
-> - See advisor feedback section below for detailed technical adjustments.
-> - [Additional feedback item]
-> - [Additional feedback item]
->
-> ---
->
+### 🔍 SME Feedback from the Break Through Tech Evaluation Team
+
+*Challenge Advisor: Please address the following feedback by editing this page. Your AI Studio Coach can help make project adjustments as needed, too. In addition to the grey section above, this section should be removed before sharing the repo with your student team.*
+
+| Check | Status | Notes |
+|-------|--------|-------|
+| Python Compatibility | GREEN | The project uses Python extensively throughout its stack, making it compatible with the student skillset. |
+| Data Readiness | GREEN | The data is publicly available and anticipated to be ready for use, falling well within manageable size limits. |
+| Resource Check | GREEN | Utilizes free-tier tools like Google Colab, ensuring accessibility for students without specialized hardware. |
+
+**Student Fit Score:** 8/10  
+**Technical Depth Score:** 7/10  
+**Overall Recommendation:** REVISE
+
+**Advisor Feedback Draft:**
+The project demonstrates significant potential by working on an impactful and timely issue, and it aligns well with the foundational skills of our students. However, I recommend simplifying the ML models or focusing on fewer modeling techniques to enhance student engagement and learning outcomes. Further, consider framing the success metrics to prioritize practical usability of the models in real-world applications.
+
 
 ---
 
@@ -149,23 +156,5 @@ I'm excited to work with you!
 ## ❓ Questions?
 
 Please bring any questions to our first meeting during the week of August 24th (Break Through Tech's Bridge to Studio - Session B).
-
----
-
-## 📋 BTT Internal Evaluation Notes
-*(This section is for BTT staff only — remove before sharing with students)*
-
-| Check | Status | Notes |
-|-------|--------|-------|
-| Python Compatibility | GREEN | The project uses Python extensively throughout its stack, making it compatible with the student skillset. |
-| Data Readiness | GREEN | The data is publicly available and anticipated to be ready for use, falling well within manageable size limits. |
-| Resource Check | GREEN | Utilizes free-tier tools like Google Colab, ensuring accessibility for students without specialized hardware. |
-
-**Student Fit Score:** 8/10  
-**Technical Depth Score:** 7/10  
-**Overall Recommendation:** REVISE
-
-**Advisor Feedback Draft:**
-The project demonstrates significant potential by working on an impactful and timely issue, and it aligns well with the foundational skills of our students. However, I recommend simplifying the ML models or focusing on fewer modeling techniques to enhance student engagement and learning outcomes. Further, consider framing the success metrics to prioritize practical usability of the models in real-world applications.
 
 ---
