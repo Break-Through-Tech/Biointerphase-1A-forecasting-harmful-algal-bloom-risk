@@ -1,61 +1,21 @@
----
-
-> ## Challenge Advisor: Update & Finalize Your Project Overview
->
-> > 💡 **These grey text instructions are just for you, the team's Challenge Advisor; please delete them once you have completed the steps below.**
->
-> We've pre-populated this Challenge Project Overview page — which is what will be shared with your Break Through Tech student team in August — using the details from your submission form. You should have received an email inviting you to join this repo as a Collaborator, enabling you to add files and make edits.
-> 
-> In order for your project to be finalized and assigned to a team, please:
-> 1. **Review all sections below** and update or expand any content as needed, making sure to address the SME Feedback in the section immediately below. Look for square brackets to find the places below that require additional inputs from you (e.g., "About [Company / Org Name]").
-> 2. **Add your dataset** to the [data folder](data) in this repo.
-> 3. **Close the Issue assigned to you in this repo** to let us know that you have made your edits and the overview page is ready for final review. You can do this by going to the _Issues_ tab in the top left section of the menu above, add a comment that says "CA review complete", and click the button to Close the Issue. 
->
-> If you're unfamiliar with how to edit a page like this in GitHub, check out [this tutorial](https://ubc-lib-geo.github.io/gis-workshop-waml-template/content/handson/edit-readme.html) for a quick overview (start with step 2 and only edit this page), and [this guide](https://ubc-lib-geo.github.io/gis-workshop-waml-template/content/markdown.html) on how to use Markdown to compose text.
->
->
-> ❌ Remember that this is a public repo. Do NOT include: Proprietary data, PII, API keys, credentials, or anything confidential.
-
----
-
-### 🔍 SME Feedback from the Break Through Tech Evaluation Team
-
-*Challenge Advisor: Please address the following feedback by editing this page. Your AI Studio Coach can help make project adjustments as needed, too. In addition to the grey section above, this section should be removed before sharing the repo with your student team.*
-
-| Check | Status | Notes |
-|-------|--------|-------|
-| Python Compatibility | 🟢 | The project uses Python extensively throughout its stack, making it compatible with the student skillset. |
-| Data Readiness | 🟢 | The data is publicly available and anticipated to be ready for use, falling well within manageable size limits. |
-| Resource Check | 🟢 | Utilizes free-tier tools like Google Colab, ensuring accessibility for students without specialized hardware. |
-
-**Student Fit Score:** 8/10  
-**Technical Depth Score:** 7/10  
-**Overall Recommendation:** REVISE
-
-**Advisor Feedback Draft:**
-The project demonstrates significant potential by working on an impactful and timely issue, and it aligns well with the foundational skills of our students. However, I recommend simplifying the ML models or focusing on fewer modeling techniques to enhance student engagement and learning outcomes. Further, consider framing the success metrics to prioritize practical usability of the models in real-world applications.
-
-
----
-
 # Forecasting Harmful Algal Bloom (HAB) Risk Using Multi-Source Water Quality and Weather Data
 
 **Company / Org:** Biointerphase  
-**Challenge Advisor:** Alyssa Long, along@biointerphase.com  
+**Challenge Advisor:** Alyssa Long, along@biointerphase.com; Mia Maksin, mmaksin@biointerphase.com  
 **Program:** Break Through Tech AI Studio - Fall 2026
 
 ---
 
 ## 🏢 About Biointerphase
 
-Biointerphase is committed to advancing environmental health through innovative solutions in the water quality sector. Our focus lies in utilizing data-driven techniques to address biological risks in aquatic systems, supporting sustainable practices and policy developments.
+Biointerphase specializes in the development of advanced biomaterials and biosignal intelligence platforms designed to restore, reinforce, and better understand complex biological systems. Within this framework, our work in the water quality sector applies these capabilities through data‑driven approaches that enable more precise monitoring, prediction, and mitigation of biological risks in aquatic environments.
 
 ---
 
 ## 🎯 The Challenge
 
 ### Project Summary
-In this project, you will use publicly available water quality, meteorological, and satellite-derived environmental data and machine learning techniques such as classification, regression, and time-series analysis to build models that predict the risk, occurrence, or growth of harmful algal blooms. This will help our company address the challenge of understanding and forecasting biological water quality risks in order to inform monitoring and mitigation strategies.
+In this project, you will use publicly available water quality, meteorological, and satellite-derived environmental data and machine learning techniques such as classification techniques (ex. bloom, at risk for bloom, no bloom, etc.) to build a model that predicts the risk or occurrence of harmful algal blooms, with optional extensions into time-series forecasting that predict the risk, occurrence, or growth of harmful algal blooms. This will help our company address the challenge of developing practical early-warning and monitoring tools for harmful algal blooms to support targeted environmental management decisions.
 
 ### Success Criteria
 Model performance (Classification: accuracy, precision/recall, F1, ROC-AUC; Regression: RMSE, MAE, R2); integration of multi-source environmental data; clear interpretation of key environmental drivers; and a reproducible, well-documented Python workflow.
@@ -79,18 +39,26 @@ Use these milestones to guide your work. Your team will create a **GitHub Projec
 **Name and Source:** Publicly available multi-source datasets focused on Florida waters around Mote Marine Laboratory  
 **Format:** CSV, TSV, JSON  
 **Size:** 1gb to 5gb  
-**Location:** [Link to dataset or instructions for accessing it]
+**Location:** All data is accessible via the data folder on GitHub. Links to additional data found in table below, if necessary
 
 ### Key Details
 - Publicly available multi-source datasets including water quality data (temperature, nutrients, chlorophyll), meteorological data (wind), and satellite-derived environmental data.
-- [Any known limitations or preprocessing needed]
-- [Link to data dictionary or documentation, if available]
+
+| Filename                     | Website/Source                                                                 | Dates                 | Data Included |
+|------------------------------|--------------------------------------------------------------------------------|-----------------------|---------------|
+| Habsos_cellcount (All FL)    | https://www.ncei.noaa.gov/products/harmful-algal-blooms-observing-system       | 1953 – April 2026     | Latitude, Longitude, Date, Category, Cell Count, Salinity, Water Temp |
+| Florida_cyanotoxins (All FL) | https://storymaps.arcgis.com/stories/ccc4c98425194605924ae474fb8002ba          | 2015 – 2026           | Latitude, Longitude, Location Type, Date, Depth of Measurement, Cyanotoxin Type, Cyanotoxin Concentration, Detection Limit |
+| BradentonFL_tempData         | https://climatecenter.fsu.edu/climate-data-access-tools/downloadable-data      | 2015 – 2025           | Date, Precipitation, Max Air Temp, Min Air Temp |
+| Sarasota_Wind&Temp           | https://erddap.secoora.org/erddap/tabledap/gov_noaa_awc_ksrq.html              | July 2022 – Current   | Air pressure, air temp, dew point temp, visibility, wind gust speed, wind speed, wind direction |
+| MoteMarineBottomTemp         | https://erddap.secoora.org/erddap/tabledap/org_secoora_scan_rng_sw.html        | 2020 – 2025           | Latitude, Longitude, Date, Bottom Ocean Temp |
+| NutrientsFL_2006_2025 (Sarasota) | https://sarasota.wateratlas.usf.edu/water-quality-trends/               | 2006 – 2025           | Date, Time, Depth; BOD, Chlorophyll-a (pheophytin corrected), DO, DO saturation, Fecal Coliform, Total Nitrogen, Ammonia (N), Kjeldahl Nitrogen, NO₂+NO₃ (N), pH, Total Phosphorus, Phosphate (PO₄), Specific Conductance, Water Temperature, TSS, Turbidity |
+| Chlorophyll_subset_sarasota  | https://coastwatch.noaa.gov/cwn/products/noaa-msl12-multi-sensor-dineof-global-2-km-gap-filled-products-chlorophyll-diffuse.html | 2020 – 2026 | Latitude, Longitude, Date, Chlorophyll-a (subset: lat 26.5–28, lon -83.5 to -81.8) |
 
 ---
 
 ## 🛠️ Suggested Approach
 
-**ML Problem Type:** Classification, Regression, Time-Series Analysis
+**ML Problem Type:** Classification (primary), Time-Series Analysis (secondary)
 
 **Recommended Libraries:**
 - Classification
@@ -104,6 +72,11 @@ Use these milestones to guide your work. Your team will create a **GitHub Projec
 
 **Evaluation Metrics:**
 - Accuracy, Precision/Recall, RMSE
+- Success will be measured by both model performance and practical usability:
+  - **Classification performance** in identifying at-risk and bloom conditions 
+  - **Ability to correctly identify "at-risk" conditions**, which are crucial for early intervention 
+  - **Interpretability of key environmental drivers** that influence the transition between non-blook, at-risk, or bloom states 
+  - **Clarity of outputs**, such that results could be used to support real-world monitoring decisions (ex. additional sampling or mitigation techniques) 
 
 ---
 
@@ -112,19 +85,12 @@ Use these milestones to guide your work. Your team will create a **GitHub Projec
 The following resources will help your team understand the problem space and potential technical approaches for this project:
 
 **Background Reading:**
-- [Link to an article or blog post about the problem domain]
-- [Link to an industry report or case study]
+- [What are Harmful Algae, Cyanobacteria, and Cyanotoxins? (EPA)](https://www.epa.gov/habs/learn-about-harmful-algae-cyanobacteria-and-cyanotoxins)
+- [HAB Contributing Factors & Impacts (CDC)](https://www.cdc.gov/harmful-algal-blooms/about/harmful-algal-blooms-contributing-factors-and-impacts.html)
+- [Existing HAB Forecasting (EPA)](https://www.epa.gov/water-research/cyanobacterial-harmful-algal-blooms-forecasting-research)
 
 **Technical Tutorials:**
-- [Link to a free tutorial on the ML technique(s) involved]
-- [Link to documentation for a key library or tool]
-
-**Code Examples:**
-- [Link to a relevant GitHub repo]
-- [Link to a sample implementation or starter code]
-
-**Other:**
-- [Links to any additional resources — e.g., papers, videos, podcasts, etc.]
+- [Classification Algorithms](https://developer.ibm.com/tutorials/learn-classification-algorithms-using-python-and-scikit-learn/)
 
 *Feel free to explore beyond these, and share anything interesting you find with me!*
 
