@@ -1,7 +1,7 @@
 # Forecasting Harmful Algal Bloom (HAB) Risk Using Multi-Source Water Quality and Weather Data
 
 **Company / Org:** Biointerphase  
-**Challenge Advisor:** Alyssa Long, along@biointerphase.com; Mia Maksin, mmaksin@biointerphase.com  
+**Challenge Advisor:** Alyssa Long, along@biointerphase.com    
 **Program:** Break Through Tech AI Studio - Fall 2026
 
 ---
