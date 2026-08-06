@@ -98,8 +98,8 @@ The following resources will help your team understand the problem space and pot
 
 ## 🤝 How We'll Work Together
 
-**Check-ins:** During our biweekly 60-min AI Studio Lab Section meeting block (2nd and 4th week of every month)  
-**Communication:** Slack (Break Through Tech workspace)  
+**Check-ins:** During our biweekly 45-min AI Studio Lab Section meeting block (2nd and 4th week of every month)  
+**Communication:** Discord (Break Through Tech workspace)  
 **Response time:** Within 48 hours on weekdays  
 
 **Recommended Tools:**
@@ -121,6 +121,6 @@ I'm excited to work with you!
 
 ## ❓ Questions?
 
-Please bring any questions to our first meeting during the week of August 24th (Break Through Tech's Bridge to Studio - Session B).
+Please bring any questions to our first meeting during the week of August 24th (Break Through Tech's Bridge to Studio - Session C).
 
 ---
