@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Rebuild the weekly table and run every model at 1, 2 and 4 weeks ahead, then the
-# bootstrap against persistence and the comparison table. Each step is timed:
+# bootstrap against persistence, the saved final models and the comparison table.
+# Each step is timed:
 # results/run_times.csv has one row per step, and results/run_times.md is a readable
 # summary with the machine and package versions the times were measured on.
 # Usage, from the models/ folder: bash run_all.sh
@@ -25,6 +26,7 @@ for h in 1 2 4; do
     timed $m python $m/train.py
   done
   timed bootstrap python experiments/bootstrap_vs_persistence.py
+  timed final_models python save_final_models.py
 done
 python compare.py
 python write_run_times.py
