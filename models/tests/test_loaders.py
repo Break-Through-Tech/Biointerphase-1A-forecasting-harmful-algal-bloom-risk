@@ -61,3 +61,20 @@ def test_load_habsos_returns_lower_case_columns(data_dir):
     h = loaders.load_habsos(CleaningLog())
     assert h.columns.tolist() == ["date", "latitude", "longitude", "description", "cellcount",
                                   "salinity", "water_temp", "in_target"]
+
+
+# ---------------------------------------------------------------- chlorophyll
+def test_load_chlorophyll_keeps_target_box_and_valid_values(data_dir):
+    (data_dir / "processed").mkdir()
+    pd.DataFrame({"date": ["2020-07-01"] * 3, "latitude": [27.3, 27.3, 28.5],
+                  "longitude": [-82.6, -82.6, -82.6], "chlor_a": [0.5, np.nan, 2.0],
+                  "coastal": [1, 0, 0]}).to_parquet(data_dir / "processed" / "chlorophyll_merged.parquet")
+    log = CleaningLog()
+    c = loaders.load_chlorophyll(log)
+    assert len(c) == 1 and c["chlor_a"].tolist() == [0.5]
+    assert steps(log)["inside target box"] == 2
+
+
+def test_load_chlorophyll_says_which_notebook_to_run_if_missing(data_dir):
+    with pytest.raises(FileNotFoundError, match="merge_chlorophyll.ipynb"):
+        loaders.load_chlorophyll(CleaningLog())

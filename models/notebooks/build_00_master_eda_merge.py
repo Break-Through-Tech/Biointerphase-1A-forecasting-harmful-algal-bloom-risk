@@ -506,6 +506,309 @@ C.append(md("""### 1.7 Cleaning summary"""))
 C.append(code("""display(summarise_cleaning(name, subset_steps=["of which inside target box"]))
 del habsos_raw, sub, fl, h1, h2, h3, h4, dups"""))
 
+# ---------------------------------------------------------------------------
+# 2. Chlorophyll
+C.append(md("""---
+## 2. `ChlorophyllaConcentrationSarasota` + `_Dataset2` — satellite chlorophyll-a
+
+| | File 1 (DS1) `ChlorophyllaConcentrationSarasota` | File 2 (DS2) `…_Dataset2` |
+|---|---|---|
+| **What** | Gap-filled 2 km satellite chlorophyll-a (mg/m³) | Satellite chlorophyll-a (mg/m³) on a coarser grid |
+| **Source** | NOAA CoastWatch multi-sensor DINEOF product [1] | Not documented in the project files |
+| **Coverage** | Jun 2020 – Sep 2026 | Jan 2010 – May 2022 |
+| **Role** | Bloom biomass signal and chlorophyll anomaly [2][3] | Extends the record back to 2010 |
+
+Chlorophyll measures **all** algae, not only *K. brevis*. NOAA's red-tide detection flags chlorophyll that rises above its recent baseline (a chlorophyll anomaly) [2][3]. The merge method follows `notebooks/merge_chlorophyll.ipynb` in the 1A repo.
+
+**This section:** 2.1 load and first look · 2.2 data-quality checks · 2.3 which pixels are land, and how often is water seen? · 2.4 exploring the data · 2.5 findings · 2.6 cleaning and merging, step by step · 2.7 cleaning summary
+
+**Sources**
+1. NOAA CoastWatch, *NOAA MSL12 multi-sensor DINEOF global 2 km gap-filled chlorophyll*. https://coastwatch.noaa.gov/cwn/products/noaa-msl12-multi-sensor-dineof-global-2-km-gap-filled-products-chlorophyll-diffuse.html · Liu, X., & Wang, M. (2023). High spatial resolution gap-free global and regional ocean color products. *IEEE Transactions on Geoscience and Remote Sensing*, 61, 4204118. https://doi.org/10.1109/tgrs.2023.3271465
+2. Stumpf, R. P., Culver, M. E., Tester, P. A., et al. (2003). Monitoring *Karenia brevis* blooms in the Gulf of Mexico using satellite ocean color imagery and other data. *Harmful Algae*, 2, 147–160. https://doi.org/10.1016/S1568-9883(02)00083-5
+3. Tomlinson, M. C., Wynne, T. T., & Stumpf, R. P. (2009). An evaluation of remote sensing techniques for enhanced detection of the toxic dinoflagellate, *Karenia brevis*. *Remote Sensing of Environment*, 113, 598–609. https://doi.org/10.1016/j.rse.2008.11.003"""))
+
+C.append(md("""### 2.1 Load and first look
+One row per **pixel per day**: date, latitude, longitude, chlorophyll-a. Pixels with no reading (cloud, land, sun glint) have an empty value."""))
+C.append(code("""chl_raw = {}
+for key, stem in [("DS1", "ChlorophyllaConcentrationSarasota"), ("DS2", "ChlorophyllaConcentrationSarasota_Dataset2")]:
+    df = read_erddap(stem, usecols=["time", "latitude", "longitude", "chlor_a"],
+                     dtype={"latitude": "float32", "longitude": "float32", "chlor_a": "float32"})
+    df["date"] = pd.to_datetime(df["time"]).dt.tz_localize(None).dt.normalize()
+    chl_raw[key] = df.drop(columns="time")
+    print(f"{key}: {len(df):,} rows x {df.shape[1]} columns")
+chl_raw["DS1"].head(3)"""))
+C.append(md("""**Column overview** (DS1, then DS2):"""))
+C.append(code("""display(profile_columns(chl_raw["DS1"]))
+profile_columns(chl_raw["DS2"])"""))
+
+C.append(md("""### 2.2 Data-quality checks"""))
+C.append(code("""def chl_checks(d):
+    lats, lons = np.sort(d["latitude"].unique()), np.sort(d["longitude"].unique())
+    expected = pd.date_range(d["date"].min(), d["date"].max())
+    return {
+        "Rows": f"{len(d):,}",
+        "Date range": f"{d['date'].min().date()} -> {d['date'].max().date()}",
+        "Days missing from the daily series": len(expected) - d["date"].nunique(),
+        "Grid (lat x lon)": f"{len(lats)} x {len(lons)}",
+        "Grid spacing (degrees)": round(float(np.diff(lats).mean()), 4),
+        "Longitude format": f"{lons.min():.2f} to {lons.max():.2f} (0-360 east)",
+        "Empty chlorophyll values": f"{d['chlor_a'].isna().mean():.0%}",
+        "Duplicate (date, lat, lon)": int(d.duplicated(["date", "latitude", "longitude"]).sum()),
+        "Values below 0.01 (outside valid range)": int((d["chlor_a"] < 0.01).sum()),
+        "Values at/above 99 (product's upper limit)": int((d["chlor_a"] >= 99).sum()),
+        "Min / max chlorophyll": f"{d['chlor_a'].min():.3f} / {d['chlor_a'].max():.1f}",
+    }
+pd.DataFrame({k: chl_checks(d) for k, d in chl_raw.items()})"""))
+
+C.append(md("""### 2.3 Which pixels are land, and how often is water seen?
+Pixels with no value on any day are land cells. The team checked these against a 1 km land map: all of DS1's never-valid cells and 97 % of DS2's are centred on land, and none is entirely water [1][2].
+
+**Sources**
+1. Biointerphase 1A, `notebooks/compare_chlorophyll_datasets.ipynb`, "Where do the NaNs come from?".
+2. Karin, T. *global-land-mask* (Python package; GLOBE 1 km land/water map). https://github.com/toddkarin/global-land-mask"""))
+C.append(code("""fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+for ax, (key, d) in zip(axes, chl_raw.items()):
+    cov = d.groupby(["latitude", "longitude"])["chlor_a"].count().rename("days").reset_index()
+    cov["longitude"] = cov["longitude"] - 360
+    land = cov[cov["days"] == 0]
+    sc = ax.scatter(cov.loc[cov.days > 0, "longitude"], cov.loc[cov.days > 0, "latitude"],
+                    c=cov.loc[cov.days > 0, "days"], s=6, cmap="Blues")
+    ax.scatter(land["longitude"], land["latitude"], s=6, c="tan", label=f"land ({len(land)} cells)")
+    ax.add_patch(plt.Rectangle((TARGET_BOX["lon"][0], TARGET_BOX["lat"][0]), 0.7, 0.7, fill=False, ec="red"))
+    ax.set_title(f"{key}: valid days per pixel (red = target box)"); ax.legend(loc="lower left", fontsize=8)
+    plt.colorbar(sc, ax=ax)
+plt.tight_layout(); plt.show()"""))
+C.append(md("""**What the figures show**
+
+* **Valid days per pixel, one map per file.** The x-axis is longitude and the y-axis is latitude. Each dot is a grid cell, coloured by the number of days it has a value (darker blue = more days). Tan dots never have a value and are treated as land: 558 cells in DS1 and 565 in DS2. The red rectangle is the Sarasota target box.
+* Offshore pixels have values on the most days. Pixels next to the coast and inside the bays have far fewer."""))
+
+C.append(md("""### 2.4 Exploring the data
+How does chlorophyll vary over time in each file, and do the two agree where they overlap (Jun 2020 – May 2022)?"""))
+C.append(code("""OVERLAP_START, OVERLAP_END = pd.Timestamp("2020-06-15"), pd.Timestamp("2022-05-31")
+fig, axes = plt.subplots(1, 2, figsize=(15, 4))
+for key, col in [("DS2", "0.6"), ("DS1", "tab:blue")]:
+    d = chl_raw[key]
+    m = d.groupby(d["date"].dt.to_period("M"))["chlor_a"].median()
+    axes[0].plot(m.index.to_timestamp(), m.values, color=col, label=key, lw=1.3)
+axes[0].axvspan(OVERLAP_START, OVERLAP_END, color="orange", alpha=0.15, label="overlap")
+axes[0].set_yscale("log"); axes[0].set_title("Monthly median chlorophyll (mg/m³)"); axes[0].legend(frameon=False)
+for key, col in [("DS2", "0.6"), ("DS1", "tab:blue")]:
+    v = chl_raw[key]["chlor_a"].dropna()
+    axes[1].hist(np.log10(v[v > 0]), bins=80, alpha=0.6, density=True, color=col, label=key)
+axes[1].set_title("Distribution of log10 chlorophyll"); axes[1].legend(frameon=False)
+plt.tight_layout(); plt.show()"""))
+C.append(md("""**What the figures show**
+
+* **Left: monthly median chlorophyll over time.** The x-axis is time and the y-axis is chlorophyll on a log scale, because values span several orders of magnitude. Grey is DS2, blue is DS1 and the orange band is the overlap. Both files rise and fall each year, and they track each other closely in the overlap.
+* **Right: distribution of all values.** The x-axis is log10 chlorophyll (−1 = 0.1 mg/m³, 1 = 10 mg/m³) and the y-axis is the share of values (density). DS1 has more high values than DS2. This is why DS2 is adjusted to DS1's scale before the two are combined (Step 7)."""))
+C.append(md("""**Is chlorophyll seasonal?** Pixel values inside the Sarasota target box, grouped by calendar month."""))
+C.append(code("""fig, axes = plt.subplots(1, 2, figsize=(15, 3.8))
+season = {}
+for key, col in [("DS2", "0.5"), ("DS1", "tab:blue")]:
+    d = chl_raw[key].dropna(subset=["chlor_a"])
+    d = d[(d["chlor_a"] >= 0.01) & is_in_box(d["latitude"], d["longitude"] - 360, TARGET_BOX)]
+    g = d.groupby(d["date"].dt.month)["chlor_a"]
+    season[key] = pd.DataFrame({"median (mg/m³)": g.median(), "% above 5 mg/m³": 100 * g.apply(lambda v: (v > 5).mean())})
+    axes[0].plot(season[key].index, season[key]["median (mg/m³)"], "-o", color=col, label=key)
+    axes[1].plot(season[key].index, season[key]["% above 5 mg/m³"], "-o", color=col, label=key)
+axes[0].set_title("Median chlorophyll by month, target box (mg/m³)"); axes[0].set_xlabel("month")
+axes[1].set_title("% of pixel-days above 5 mg/m³, by month"); axes[1].set_xlabel("month")
+for ax in axes: ax.set_xticks(range(1, 13)); ax.legend(frameon=False)
+plt.tight_layout(); plt.show()
+pd.concat(season, axis=1).round(2).T"""))
+C.append(md("""**What the figures show**
+
+* **Left: median chlorophyll by month.** The x-axis is the month (1 = January) and the y-axis is the median pixel value in the target box (mg/m³). Both files are lowest in April–June and highest in August–November. In DS1 the median rises from 0.7 mg/m³ in May to 2.4 mg/m³ in September.
+* **Right: share of high values by month.** The y-axis is the percentage of pixel-days above 5 mg/m³. High values are rare in April–May (about 5–6 % in DS1, under 1 % in DS2) and most common in September–October (25 % in DS1 in September, 13 % in DS2 in October).
+* **The high-chlorophyll months match the red-tide peak** in the HABSOS cell counts (September–November, §1.4). Season (week of year) is therefore included as a feature in §10, so the model can separate the regular seasonal rise from unusual values."""))
+
+C.append(md("""### 2.5 Findings
+* **Most raw rows are empty:** 75 % in DS1 and 81 % in DS2.
+* **The two files use different grids** (DS1 0.0375°, DS2 0.0417°) **and read differently:** on matching pixel-days in the overlap, DS1 reads 7.5 % lower than DS2 at the median and has more high values. Stacking them unchanged would create a step in 2020.
+* **Values sit at the product's limits.** The product's valid range is 0.001–100 mg/m³ [1]. DS1 has 20 values below 0.01 (7 exactly at 0.001), and both files have 10 values at or above 99.
+* **Coastal and bay pixels have the fewest observations.**
+* **Chlorophyll is seasonal:** lowest in April–June and highest in August–November, the same months as the red-tide peak (§1.4).
+
+**Source**
+1. NASA Ocean Biology Processing Group, *chlor_a* product metadata: valid_min = 0.001, valid_max = 100 mg m⁻³ (e.g. NOAA CoastWatch ERDDAP, https://coastwatch.pfeg.noaa.gov/erddap/info/erdMH1chla1day_R2022SQ/index.html)."""))
+
+C.append(md("""### 2.6 Cleaning and merging, step by step
+Steps 1–5 clean each file separately, Steps 6–8 merge them, and Step 9 keeps the Sarasota target box."""))
+C.append(code("""for key, d in chl_raw.items():
+    log_step(f"chlorophyll {key}", "raw file", d)"""))
+
+C.append(md("""#### Step 1 — Convert longitude to −180…180 (rows kept)
+Both files store longitude as 0–360° east (e.g. 277.5). Every other dataset uses −180…180 (−82.5), so 360 is subtracted."""))
+C.append(code("""for key, d in chl_raw.items():
+    d["longitude"] = (d["longitude"] - 360).round(5)
+    print(f"{key}: longitude now {d['longitude'].min():.3f} to {d['longitude'].max():.3f}")
+    log_step(f"chlorophyll {key}", "longitude converted to -180..180", d, "values changed, rows kept")"""))
+
+C.append(md("""#### Step 2 — Blank values below 0.01 mg/m³ (rows kept)
+The chlorophyll algorithm (OCx) is designed for 0.01–100 mg/m³ [1], so values below 0.01 are outside its design range. DS1 has 20 such values, 7 of them exactly at the product minimum of 0.001 (2.5). DS2's lowest value is 0.061, so none of its values are affected. Only the value is set to missing. This follows the team's chlorophyll comparison notebook [2].
+
+**Sources**
+1. NASA Ocean Biology Processing Group (2023). *Chlorophyll a — Algorithm Theoretical Basis Document*, v1.1: "The current polynomial expression for OCx spans four orders of magnitude (0.01 to 100 mg m⁻³)." https://oceandata.sci.gsfc.nasa.gov/files/atbd/atbd-obdaac-chlorophyll-a.pdf
+2. Biointerphase 1A, `notebooks/compare_chlorophyll_datasets.ipynb` (section 2.5) and `notebooks/merge_chlorophyll.ipynb` (`LOW_LIMIT = 0.01`)."""))
+C.append(code("""for key, d in chl_raw.items():
+    low = d["chlor_a"] < 0.01
+    print(f"{key}: {low.sum()} values below 0.01 -> missing")
+    d.loc[low, "chlor_a"] = np.nan
+    log_step(f"chlorophyll {key}", "values below 0.01 blanked", d, f"{low.sum()} values set to missing, rows kept")"""))
+
+C.append(md("""#### Step 3 — Mark land cells and flag coastal water cells
+* **Land:** cells with no value on any day are land (2.3) and are left out.
+* **Distance to land:** for every water cell, the distance to the nearest land cell is computed.
+* **Coastal flag:** DS1 water cells within 10 km of land are flagged `coastal`, not removed. Their values are less certain: a coastline pixel mixes land and water, and light from nearby land can contaminate water pixels (the adjacency effect) [1]. They are also observed less often: 19 % of days within 10 km of land, against 38–42 % farther out [2]. The flag keeps these pixels but marks them, so they feed a separate coastal-only chlorophyll feature.
+
+**Sources**
+1. Bulgarelli, B., & Zibordi, G. (2018). On the detectability of adjacency effects in ocean color remote sensing of mid-latitude coastal environments by SeaWiFS, MODIS-A, MERIS, OLCI, OLI and MSI. *Remote Sensing of Environment*, 209, 423–438. https://doi.org/10.1016/j.rse.2017.12.021
+2. Biointerphase 1A, `notebooks/compare_chlorophyll_datasets.ipynb` (coverage by distance from land) and `notebooks/merge_chlorophyll.ipynb` (`COASTAL_KM = 10`)."""))
+C.append(code("""def to_km(lat, lon):
+    \"\"\"Convert latitude/longitude to approximate x/y kilometres for distance lookups.
+
+    One degree of latitude is ~111 km; a degree of longitude is shorter by cos(latitude),
+    evaluated at Sarasota (~27.3 N). Accurate enough within this small area.
+
+    Args:
+        lat (array-like): Latitudes in degrees.
+        lon (array-like): Longitudes in degrees.
+
+    Returns:
+        numpy.ndarray: Array of shape (n, 2) with [north km, east km] per point.
+    \"\"\"
+    return np.c_[np.asarray(lat) * 111, np.asarray(lon) * 111 * np.cos(np.radians(27.3))]
+
+water = {}
+for key, d in chl_raw.items():
+    cells = d.groupby(["latitude", "longitude"])["chlor_a"].count().rename("n_valid").reset_index()
+    land, w = cells[cells["n_valid"] == 0], cells[cells["n_valid"] > 0].copy()
+    w["km_to_land"] = cKDTree(to_km(land["latitude"], land["longitude"])).query(to_km(w["latitude"], w["longitude"]))[0]
+    water[key] = w
+    print(f"{key}: {len(w)} water cells, {len(land)} land cells")
+    log_step(f"chlorophyll {key}", "land cells identified", d, f"{len(land)} land cells, {len(w)} water cells")
+water["DS1"]["coastal"] = (water["DS1"]["km_to_land"] <= 10).astype("int8")
+log_step("chlorophyll DS1", "coastal water cells flagged (<= 10 km)", chl_raw["DS1"],
+         f"{water['DS1']['coastal'].sum()} of {len(water['DS1'])} water cells flagged, rows kept")
+print(f"DS1 coastal water cells (<= 10 km from land): {water['DS1']['coastal'].sum()} of {len(water['DS1'])}")"""))
+
+C.append(md("""#### Step 4 — Keep only valid observations
+Once land cells are known, empty pixel-days carry no information and are removed."""))
+C.append(code("""chl_obs = {}
+for key, d in chl_raw.items():
+    chl_obs[key] = d.dropna(subset=["chlor_a"]).reset_index(drop=True)
+    show_step(f"chlorophyll {key}", d, chl_obs[key], "valid observations only")
+    LOG[-1]["note"] = "empty pixel-days removed (land, cloud, glint)\""""))
+
+C.append(md("""#### Step 5 — Flag values at the upper limit, add a log column (rows kept)
+Values of 99 mg/m³ or more are at the product's maximum of 100 (2.5). They are kept but flagged, and left out when the two files are compared in Step 7. `log_chl` = log10(chlorophyll)."""))
+C.append(code("""for key, d in chl_obs.items():
+    d["chl_at_limit"] = (d["chlor_a"] >= 99).astype("int8")
+    d["log_chl"] = np.log10(d["chlor_a"])
+    print(f"{key}: {d['chl_at_limit'].sum()} values flagged at limit")
+    log_step(f"chlorophyll {key}", "values >= 99 flagged, log10 column added", d, f"{d['chl_at_limit'].sum()} values flagged, rows kept")
+ds1, ds2 = chl_obs["DS1"], chl_obs["DS2"]"""))
+
+C.append(md("""#### Step 6 — Put DS2 on DS1's grid
+Each DS1 water cell takes the values of its **nearest DS2 water pixel**, if one is within 3.5 km (a project choice, about one DS2 pixel width). DS2 pixels are larger, so one DS2 pixel can feed two DS1 cells, which is why the row count grows. DS1 cells with no DS2 pixel within 3.5 km get no DS2 values."""))
+C.append(code("""dist, idx = cKDTree(to_km(water["DS2"]["latitude"], water["DS2"]["longitude"])).query(
+    to_km(water["DS1"]["latitude"], water["DS1"]["longitude"]))
+grid_map = water["DS1"][["latitude", "longitude"]].assign(
+    lat_ds2=water["DS2"]["latitude"].values[idx], lon_ds2=water["DS2"]["longitude"].values[idx], dist_km=dist)
+grid_map = grid_map[grid_map["dist_km"] <= 3.5]
+ds2_on1 = (ds2.rename(columns={"latitude": "lat_ds2", "longitude": "lon_ds2"})
+              .merge(grid_map, on=["lat_ds2", "lon_ds2"]).drop(columns=["lat_ds2", "lon_ds2", "dist_km"]))
+print(f"DS1 water cells with a DS2 partner: {len(grid_map)} of {len(water['DS1'])} (median distance {grid_map.dist_km.median():.1f} km)")
+show_step("chlorophyll DS2", ds2, ds2_on1, "re-gridded onto DS1 cells")
+LOG[-1]["note"] = f"nearest DS2 pixel within 3.5 km; {len(grid_map)} of {len(water['DS1'])} DS1 water cells matched\""""))
+
+C.append(md("""#### Step 7 — Adjust DS2 to read like DS1 (quantile mapping)
+Quantile mapping matches two datasets by their percentiles, and is a standard way to remove a systematic difference between two products [1]. On pixel-days where **both** files have a value (the 2020–2022 overlap), DS2's 1st–99th percentiles are matched to DS1's: DS2's 10th percentile becomes DS1's 10th percentile, and so on. Every DS2 value is then translated through that table. Row counts don't change; only DS2's values shift.
+
+**Source**
+1. Gudmundsson, L., Bremnes, J. B., Haugen, J. E., & Engen-Skaugen, T. (2012). Technical Note: Downscaling RCM precipitation to the station scale using statistical transformations – a comparison of methods. *Hydrology and Earth System Sciences*, 16, 3383–3390. https://doi.org/10.5194/hess-16-3383-2012"""))
+C.append(code("""pairs = ds1.merge(ds2_on1, on=["date", "latitude", "longitude"], suffixes=("_ds1", "_ds2"))
+pairs = pairs[(pairs["chl_at_limit_ds1"] == 0) & (pairs["chl_at_limit_ds2"] == 0)]
+PCTS = np.linspace(0.01, 0.99, 99)
+q2, q1 = np.quantile(pairs["log_chl_ds2"], PCTS), np.quantile(pairs["log_chl_ds1"], PCTS)
+
+def apply_qmap(x: np.ndarray) -> np.ndarray:
+    \"\"\"Translate DS2 log-chlorophyll values onto DS1's scale (quantile mapping).
+
+    Values inside the 1st-99th percentile range are interpolated through the
+    percentile table; values beyond it are shifted by the end offset instead of
+    extrapolated.
+
+    Args:
+        x (array-like): DS2 values of log10(chlorophyll-a).
+
+    Returns:
+        numpy.ndarray: Adjusted log10(chlorophyll-a) values on DS1's scale.
+
+    Example:
+        >>> apply_qmap(np.log10([0.3, 1.0, 5.0])).shape
+        (3,)
+    \"\"\"
+    x = np.asarray(x); y = np.interp(x, q2, q1)
+    y = np.where(x < q2[0], x + (q1[0] - q2[0]), y)
+    return np.where(x > q2[-1], x + (q1[-1] - q2[-1]), y)
+
+gap = lambda a, b: (1 - 10 ** np.median(a - b)) * 100
+print(f"matched pixel-days in the overlap: {len(pairs):,}")
+print(f"DS1 reads {gap(pairs['log_chl_ds1'], pairs['log_chl_ds2']):.1f}% lower than DS2 before adjustment, "
+      f"{gap(pairs['log_chl_ds1'], apply_qmap(pairs['log_chl_ds2'])):.1f}% after")
+display(pd.DataFrame({"percentile": [10, 50, 90, 99],
+                      "DS2 value (mg/m³)": 10 ** np.interp([0.1, 0.5, 0.9, 0.99], PCTS, q2),
+                      "becomes (mg/m³)": 10 ** np.interp([0.1, 0.5, 0.9, 0.99], PCTS, q1)}).round(3))
+ds2_on1["log_chl"] = apply_qmap(ds2_on1["log_chl"])
+ds2_on1["chlor_a"] = (10 ** ds2_on1["log_chl"]).astype("float32")
+log_step("chlorophyll DS2", "values adjusted to DS1 scale (quantile mapping)", ds2_on1,
+         f"DS1-DS2 median gap {gap(pairs['log_chl_ds1'], pairs['log_chl_ds2']):.1f}% -> "
+         f"{gap(pairs['log_chl_ds1'], apply_qmap(pairs['log_chl_ds2'])):.1f}%, rows kept")"""))
+
+C.append(md("""#### Step 8 — Combine: DS1 wherever it has a value, adjusted DS2 elsewhere
+| Period | Value used |
+|---|---|
+| 2010 → Jun 2020 | adjusted DS2 |
+| Jun 2020 → May 2022 (overlap) | DS1; adjusted DS2 only where DS1 is empty that day |
+| Jun 2022 → 2026 | DS1 |"""))
+C.append(code("""d2 = ds2_on1.merge(ds1[["date", "latitude", "longitude"]], on=["date", "latitude", "longitude"], how="left", indicator=True)
+d2 = d2[d2["_merge"] == "left_only"].drop(columns="_merge")
+cols = ["date", "latitude", "longitude", "chlor_a"]
+chl_all = (pd.concat([ds1[cols].assign(source="ds1"), d2[cols].assign(source="ds2_adj")], ignore_index=True)
+             .merge(water["DS1"][["latitude", "longitude", "coastal"]], on=["latitude", "longitude"], how="left"))
+log_step("chlorophyll (merged)", "DS1 + adjusted DS2", chl_all,
+         f"{(chl_all['source'] == 'ds1').sum():,} DS1 rows + {(chl_all['source'] == 'ds2_adj').sum():,} adjusted DS2 rows")
+print(f"merged rows: {len(chl_all):,} | duplicate (date, lat, lon): {chl_all.duplicated(['date', 'latitude', 'longitude']).sum()}")
+pd.crosstab(chl_all["date"].dt.year, chl_all["source"]).T"""))
+
+C.append(md("""#### Step 9 — Keep the Sarasota target box
+Only pixels inside the target box (lat 26.9–27.6, lon −83.0 to −82.3; see §1 Step 7) feed the weekly features."""))
+C.append(code("""chl = chl_all[is_in_box(chl_all["latitude"], chl_all["longitude"], TARGET_BOX)].copy()
+show_step("chlorophyll (merged)", chl_all, chl, "inside target box")
+LOG[-1]["note"] = "lat 26.9-27.6, lon -83.0 to -82.3"
+m = chl.groupby(chl["date"].dt.to_period("M"))["chlor_a"].median()
+fig, ax = plt.subplots(figsize=(13, 3))
+ax.plot(m.index.to_timestamp(), m.values, color="tab:green")
+ax.axvline(OVERLAP_START, color="0.5", lw=1); ax.axvline(OVERLAP_END, color="0.5", lw=1)
+ax.set_yscale("log"); ax.set_title("Merged chlorophyll, Sarasota target box: monthly median (grey = overlap edges; no step = merge worked)")
+plt.show()"""))
+C.append(md("""**What the figure shows**
+
+* **Merged chlorophyll in the target box, monthly median.** The x-axis is time and the y-axis is chlorophyll (mg/m³, log scale). The grey lines mark the start and end of the overlap, where the series switches from adjusted DS2 to DS1.
+* The series continues across both lines without a jump, so the adjustment in Step 7 removed the difference between the files."""))
+
+C.append(md("""#### Deliberately *not* done
+* **Did not fill cloudy days.** A day with no observation stays missing instead of being interpolated.
+* **Did not remove high values.** Bloom-level chlorophyll is the signal.
+* **Did not average the two files.** DS1 is the newer, finer product, so it is used wherever it has a value."""))
+
+C.append(md("""### 2.7 Cleaning summary"""))
+C.append(code("""for ds in ["chlorophyll DS1", "chlorophyll DS2", "chlorophyll (merged)"]:
+    print(ds); display(summarise_cleaning(ds))
+del chl_raw, chl_obs, ds1, ds2, ds2_on1, d2, pairs, chl_all"""))
+
 
 nb["cells"] = C
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}

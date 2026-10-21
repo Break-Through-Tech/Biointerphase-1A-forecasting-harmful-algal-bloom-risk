@@ -7,6 +7,7 @@ the comments next to the step.
 
 Datasets (all from the 1A repo data/ folder):
   1 habsos_cellcounts            K. brevis cell counts      -> LABEL + lag features
+  2 ChlorophyllaConcentration*   satellite chl-a (2 files)  -> via processed/chlorophyll_merged.parquet
 """
 import numpy as np
 import pandas as pd
@@ -74,3 +75,40 @@ def load_habsos(log: CleaningLog) -> pd.DataFrame:
     log.record_step(name, "of which inside target box", int(df["in_target"].sum()))
     return df[["date", "LATITUDE", "LONGITUDE", "DESCRIPTION", "CELLCOUNT",
                "SALINITY", "WATER_TEMP", "in_target"]].rename(columns=str.lower)
+
+
+# ---------------------------------------------------------------------------
+# 2. Satellite chlorophyll-a (merged by merge_chlorophyll.ipynb)
+# ---------------------------------------------------------------------------
+def load_chlorophyll(log: CleaningLog) -> pd.DataFrame:
+    """Load the merged satellite chlorophyll-a and keep the target box.
+
+    Reads data/processed/chlorophyll_merged.parquet, written by
+    notebooks/merge_chlorophyll.ipynb (file 1 plus quantile-mapped file 2).
+
+    Args:
+        log (CleaningLog): Log that receives the row count after each step.
+
+    Returns:
+        pandas.DataFrame: One row per valid pixel-day in the target box, with columns
+        date, latitude, longitude, chlor_a (mg/m³) and coastal (1 within 10 km of land).
+
+    Raises:
+        FileNotFoundError: If the merged file has not been created yet.
+
+    Example:
+        >>> len(load_chlorophyll(CleaningLog()))
+        502775
+    """
+    name = "chlorophyll (satellite)"
+    path = DATA_DIR / "processed" / "chlorophyll_merged.parquet"
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found: run notebooks/merge_chlorophyll.ipynb first.")
+    df = pd.read_parquet(path)
+    log.record_step(name, "merged ds1 + adjusted ds2 (gap-filled 2 km pixels)", df)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df[is_in_box(df["latitude"], df["longitude"], TARGET_BOX)]
+    log.record_step(name, "inside target box", df)
+    df = df.dropna(subset=["chlor_a"])
+    log.record_step(name, "non-null chl-a", df)
+    return df[["date", "latitude", "longitude", "chlor_a", "coastal"]]
