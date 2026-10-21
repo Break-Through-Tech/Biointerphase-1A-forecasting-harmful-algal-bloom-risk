@@ -292,6 +292,22 @@ For persistence, the red marks sit at the start of each yellow or dark-red stret
 * **The bar to beat:** macro-F1 0.71 at 1 week, 0.65 at 2 weeks and 0.60 at 4 weeks.
 * **Warnings are reliable but late:** warning precision 0.75–0.85, but only 5–7 of 11 bloom onsets get a warning, and no escalation is ever caught (0 %)."""))
 
+# ---------------------------------------------------------------- 3. climatology
+C.append(md("""---
+## 3. Seasonal climatology
+
+**What it is.** For each week of the year (± 3 weeks), the share of past weeks in each class, adjusted for how rare each class is; the forecast is the most likely class for that time of year. It uses only the date.
+
+**Why test it.** Blooms are strongly seasonal (1 % of sampled weeks at bloom level in May, 47 % in November). This shows how much of the forecast season alone can explain."""))
+C.append(code("""model_table("seasonal_climatology")"""))
+C.append(code("""timeline("seasonal_climatology", "kb_only")"""))
+C.append(md("""**Score per test year** (1 week ahead, `kb_only`):"""))
+C.append(code("""by_year("seasonal_climatology", "kb_only")"""))
+C.append(md("""**Findings**
+* **Weak overall:** macro-F1 0.37 at every horizon (the same season gives the same forecast whatever happened recently).
+* **Many false alarms:** it warns in most autumn weeks, so warning recall is high (0.82) but warning precision is low (0.42).
+* Season alone is not enough; it is used as a feature in the other models instead."""))
+
 
 nb["cells"] = C
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}
