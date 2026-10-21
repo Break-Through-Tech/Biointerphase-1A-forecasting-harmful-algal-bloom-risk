@@ -11,6 +11,7 @@ Datasets (all from the 1A repo data/ folder):
   3 NutrientsFL_2006_2025        Sarasota Bay + creek water quality
   4 bradentonFL_tempData         daily air temp + rainfall
   5 Sarasota_Wind&Temp           KSRQ airport hourly weather (2022-07+)
+  6 SarasotaWindData             gridded zonal wind u (2019+)
 """
 import numpy as np
 import pandas as pd
@@ -246,3 +247,33 @@ def load_ksrq(log: CleaningLog) -> pd.DataFrame:
              "dropped gust (87% missing) and visibility (not a HAB driver)")
     return df[["date", "wind_speed", "wind_u", "wind_v", "air_temperature",
                "dew_point_temperature", "air_pressure_at_mean_sea_level"]]
+
+
+# ---------------------------------------------------------------------------
+# 6. Gridded zonal wind (u only)
+# ---------------------------------------------------------------------------
+def load_uwind(log: CleaningLog) -> pd.DataFrame:
+    """Load the gridded east–west wind and average it over the regional box.
+
+    Longitude is converted from 0–360° to −180–180° before the box is applied.
+
+    Args:
+        log (CleaningLog): Log that receives the row count after each step.
+
+    Returns:
+        pandas.DataFrame: One row per time step (four a day), with columns date and
+        uwnd (m/s; negative = wind blowing from the east).
+
+    Example:
+        >>> len(load_uwind(CleaningLog()))
+        11220
+    """
+    name = "SarasotaWindData (u grid)"
+    df = read_erddap(DATA_DIR / "SarasotaWindData.csv")
+    log.record_step(name, "raw", df)
+    df["date"] = pd.to_datetime(df["time"]).dt.tz_localize(None)
+    df["longitude"] = df["longitude"] - 360        # 0-360 E -> -180..180
+    df = df[is_in_box(df["latitude"], df["longitude"], REGIONAL_BOX)].dropna(subset=["uwnd"])
+    log.record_step(name, "inside regional box, non-null", df,
+             "file has only the east-west (u) component, no v")
+    return df.groupby("date", as_index=False)["uwnd"].mean()

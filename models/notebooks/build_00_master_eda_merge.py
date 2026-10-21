@@ -1238,6 +1238,98 @@ C.append(md("""### 5.6 Cleaning summary"""))
 C.append(code("""display(summarise_cleaning(name))
 del ksrq_raw, k1"""))
 
+# ---------------------------------------------------------------------------
+# 6. Gridded wind
+C.append(md("""---
+## 6. `SarasotaWindData` — gridded east–west wind
+
+| | |
+|---|---|
+| **What** | East–west (zonal, `uwnd`) wind on a 0.25° grid over the ocean |
+| **Source** | CCMP v2.1 near-real-time ocean surface wind [1], via NOAA CoastWatch ERDDAP [2] |
+| **Coverage** | Jan 2019 – Sep 2026 |
+| **Role** | Extends wind back to 2019, but **east–west only**: the north–south component linked to blooms [3] is not in the file |
+
+**This section:** 6.1 load and first look · 6.2 data-quality checks · 6.3 is the grid regular in space and time? · 6.4 exploring the data · 6.5 findings · 6.6 cleaning, step by step · 6.7 cleaning summary
+
+**Sources**
+1. Mears, C. A., Scott, J., Wentz, F. J., Ricciardulli, L., Leidner, S. M., Hoffman, R., & Atlas, R. (2019). A near-real-time version of the Cross-Calibrated Multiplatform (CCMP) ocean surface wind velocity data set. *Journal of Geophysical Research: Oceans*, 124(10), 6997–7010. https://doi.org/10.1029/2019JC015367
+2. NOAA CoastWatch ERDDAP, *pifscCcmpDailyV21NRT*. https://coastwatch.pfeg.noaa.gov/erddap/griddap/pifscCcmpDailyV21NRT.html
+3. Li, M. F., Glibert, P. M., & Lyubchich, V. (2021). Machine learning classification algorithms for predicting *Karenia brevis* blooms on the West Florida Shelf. *Journal of Marine Science and Engineering*, 9(9), 999. https://doi.org/10.3390/jmse9090999"""))
+
+C.append(md("""### 6.1 Load and first look
+One row per grid point per time step."""))
+C.append(code("""uw_raw = read_erddap("SarasotaWindData")
+uw_raw["date"] = pd.to_datetime(uw_raw["time"]).dt.tz_localize(None)
+print(f"{len(uw_raw):,} rows x {uw_raw.shape[1]} columns")
+display(uw_raw.head(3))
+profile_columns(uw_raw)"""))
+
+C.append(md("""### 6.2 Data-quality checks"""))
+C.append(code("""pd.DataFrame([
+    ("Date range", f"{uw_raw['date'].min().date()} -> {uw_raw['date'].max().date()}"),
+    ("Wind components in the file", [c for c in uw_raw.columns if "wnd" in c]),
+    ("Missing uwnd", f"{uw_raw['uwnd'].isna().mean():.1%}"),
+    ("Duplicate (time, lat, lon)", int(uw_raw.duplicated(["date", "latitude", "longitude"]).sum())),
+    ("uwnd range (m/s)", f"{uw_raw['uwnd'].min():.1f} to {uw_raw['uwnd'].max():.1f}"),
+    ("Longitude format", f"{uw_raw['longitude'].min()} to {uw_raw['longitude'].max()} (0-360 east)"),
+], columns=["check", "result"])"""))
+
+C.append(md("""### 6.3 Is the grid regular in space and time?"""))
+C.append(code("""lats, lons = np.sort(uw_raw["latitude"].unique()), np.sort(uw_raw["longitude"].unique())
+times = np.sort(uw_raw["date"].unique())
+steps = pd.Series(np.diff(times)).value_counts()
+print(f"grid: {len(lats)} lat x {len(lons)} lon, spacing {np.diff(lats).mean():.2f} x {np.diff(lons).mean():.2f} degrees")
+print(f"time steps: {len(times):,}; step sizes found: {steps.to_dict()}")
+print(f"rows per time step: {uw_raw.groupby('date').size().unique().tolist()} (expected {len(lats) * len(lons)})")"""))
+
+C.append(md("""### 6.4 Exploring the data"""))
+C.append(code("""m = uw_raw.set_index("date")["uwnd"].resample("MS").mean()
+fig, ax = plt.subplots(figsize=(13, 3)); ax.plot(m.index, m.values, color="tab:blue"); ax.axhline(0, color="0.5", lw=0.8)
+ax.set_title("Monthly mean east-west wind over the whole grid (m/s; negative = blowing toward the west)"); plt.show()"""))
+C.append(md("""**What the figure shows**
+
+* **Monthly mean east–west wind over the grid.** The x-axis is time and the y-axis is m/s. Negative means the wind blows toward the west (from the east).
+* The wind is mostly from the east, and most strongly in autumn: the lowest monthly values, −3.1 to −3.7 m/s, are in November 2020, October 2024 and October 2025. This matches the airport station (5.3)."""))
+C.append(code("""clim = uw_raw.groupby(uw_raw["date"].dt.month)["uwnd"].mean()
+fig, ax = plt.subplots(figsize=(8, 3.2))
+ax.bar(clim.index, clim.values, color=["tab:blue" if v < 0 else "tab:orange" for v in clim.values]); ax.axhline(0, color="0.5", lw=0.8)
+ax.set_xticks(range(1, 13)); ax.set_xlabel("month")
+ax.set_title("Mean east-west wind by month, all years (m/s; negative = from the east)"); plt.show()"""))
+C.append(md("""**What the figure shows**
+
+* **Mean east–west wind for each calendar month, averaged over 2019–2026.** The x-axis is the month (1 = January) and the y-axis is m/s; negative means wind from the east.
+* Every month except July averages below zero. The strongest easterly months are October (−2.4 m/s) and November (−2.1 m/s), the same months the airport station shows wind from the north-east (5.3)."""))
+
+C.append(md("""### 6.5 Findings
+* **Regular grid:** no missing values, no duplicates, and every time step has all 49 grid points.
+* **9 gaps of 1–2 days** where whole time steps are missing (6.3).
+* **East–west component only.** The north–south component, which Li et al. link to bloom probability [1], is not in this file.
+* **Wind from the east is strongest in autumn**, matching the airport station (§5).
+
+**Source**
+1. Li, M. F., Glibert, P. M., & Lyubchich, V. (2021). Machine learning classification algorithms for predicting *Karenia brevis* blooms on the West Florida Shelf. *Journal of Marine Science and Engineering*, 9(9), 999. https://doi.org/10.3390/jmse9090999"""))
+
+C.append(md("""### 6.6 Cleaning, step by step"""))
+C.append(code("""name = "SarasotaWindData (u grid)"
+log_step(name, "raw file", uw_raw)"""))
+C.append(md("""#### Step 1 — Convert longitude to −180…180 (rows kept)"""))
+C.append(code("""uw_raw["longitude"] = uw_raw["longitude"] - 360
+print(f"longitude now {uw_raw['longitude'].min()} to {uw_raw['longitude'].max()}")
+log_step(name, "longitude converted to -180..180", uw_raw, "values changed, rows kept")"""))
+C.append(md("""#### Step 2 — Keep the regional box, drop empty values"""))
+C.append(code("""uw = uw_raw[is_in_box(uw_raw["latitude"], uw_raw["longitude"], REGIONAL_BOX)].dropna(subset=["uwnd"])
+show_step(name, uw_raw, uw, "inside regional box, empty values dropped")
+LOG[-1]["note"] = f"{uw[['latitude', 'longitude']].drop_duplicates().shape[0]} of {uw_raw[['latitude', 'longitude']].drop_duplicates().shape[0]} grid points kept\""""))
+C.append(md("""#### Step 3 — Average the box into one value per time step
+Gives one regional east–west wind series."""))
+C.append(code("""uwind = uw.groupby("date", as_index=False)["uwnd"].mean()
+log_step(name, "one value per time step (box average)", uwind, f"{len(uwind):,} time steps, {uwind['date'].min().date()} to {uwind['date'].max().date()}")
+uwind.head()"""))
+C.append(md("""### 6.7 Cleaning summary"""))
+C.append(code("""display(summarise_cleaning(name))
+del uw_raw, uw"""))
+
 
 nb["cells"] = C
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}

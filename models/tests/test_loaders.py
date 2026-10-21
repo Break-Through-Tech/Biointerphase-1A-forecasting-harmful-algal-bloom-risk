@@ -148,3 +148,14 @@ def test_load_ksrq_splits_wind_and_blanks_bad_temperatures(data_dir):
     assert k["wind_u"].round(6).tolist() == [0.0, -2.0]
     assert k["wind_v"].round(6).tolist() == [-2.0, 0.0]
     assert np.isnan(k["air_temperature"].iloc[1])
+
+
+# ---------------------------------------------------------------- gridded wind
+def test_load_uwind_converts_longitude_and_averages_the_box(data_dir):
+    (data_dir / "SarasotaWindData.csv").write_text(
+        "time,latitude,longitude,uwnd\nUTC,degrees_north,degrees_east,m s-1\n"
+        "2019-01-01T00:00:00Z,27.0,277.0,-2.0\n"         # -83.0: inside the regional box
+        "2019-01-01T00:00:00Z,27.0,277.5,-4.0\n"         # -82.5: inside
+        "2019-01-01T00:00:00Z,27.0,270.0,10.0\n")        # -90.0: outside
+    u = loaders.load_uwind(CleaningLog())
+    assert u["uwnd"].tolist() == [-3.0]
