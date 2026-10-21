@@ -1330,6 +1330,84 @@ C.append(md("""### 6.7 Cleaning summary"""))
 C.append(code("""display(summarise_cleaning(name))
 del uw_raw, uw"""))
 
+# ---------------------------------------------------------------------------
+# 7. Mote
+C.append(md("""---
+## 7. `MoteMarine_BottomTemp` — hourly water temperature
+
+| | |
+|---|---|
+| **What** | Sea-water temperature at 2 m depth from one fixed sensor near Mote Marine Laboratory (27.33 N, 82.56 W) |
+| **Source** | Mote Marine Laboratory, via SECOORA ERDDAP [1] |
+| **Coverage** | Aug 2020 – Mar 2025, hourly |
+| **Role** | Water temperature is a feature in the Medina et al. forecast [2] |
+
+**This section:** 7.1 load and first look · 7.2 data-quality checks · 7.3 is the hourly record continuous? · 7.4 exploring the data · 7.5 findings · 7.6 cleaning, step by step · 7.7 cleaning summary
+
+**Sources**
+1. SECOORA ERDDAP, *org_secoora_scan_rng_sw*. https://erddap.secoora.org/erddap/tabledap/org_secoora_scan_rng_sw.html
+2. Medina, M., Julian, P., Chin, N., & Davis, S. E. (2024). An early-warning forecast model for red tide (*Karenia brevis*) blooms on the southwest coast of Florida. *Harmful Algae*, 139, 102729. https://doi.org/10.1016/j.hal.2024.102729"""))
+
+C.append(md("""### 7.1 Load and first look"""))
+C.append(code("""mote_raw = read_erddap("MoteMarine_BottomTemp")
+mote_raw["date"] = pd.to_datetime(mote_raw["time"]).dt.tz_localize(None)
+print(f"{len(mote_raw):,} rows x {mote_raw.shape[1]} columns")
+display(mote_raw.head(3))
+profile_columns(mote_raw)"""))
+
+C.append(md("""### 7.2 Data-quality checks"""))
+C.append(code("""pd.DataFrame([
+    ("Date range", f"{mote_raw['date'].min().date()} -> {mote_raw['date'].max().date()}"),
+    ("Duplicate timestamps", int(mote_raw["date"].duplicated().sum())),
+    ("Locations / depths", f"{mote_raw[['latitude', 'longitude']].drop_duplicates().shape[0]} location, depth {mote_raw['z'].unique().tolist()} m"),
+    ("QC flags (1 pass, 3 suspect, 4 fail)", str(mote_raw["sea_water_temperature_qc_agg"].value_counts().to_dict())),
+    ("Temperature range (°C)", f"{mote_raw['sea_water_temperature'].min()} to {mote_raw['sea_water_temperature'].max()}"),
+    ("Hours missing from the hourly series", len(pd.date_range(mote_raw.date.min(), mote_raw.date.max(), freq="h")) - mote_raw["date"].nunique()),
+], columns=["check", "result"])"""))
+
+C.append(md("""### 7.3 Is the hourly record continuous?
+Checking for duplicates isn't enough; this looks for jumps between consecutive readings."""))
+C.append(code("""t = mote_raw["date"].sort_values()
+gaps = t.diff()
+big = gaps[gaps > pd.Timedelta(hours=1)]
+display(pd.DataFrame({"gap starts": t.shift(1)[big.index], "gap ends": t[big.index],
+                      "hours missing": (big / pd.Timedelta(hours=1) - 1).astype(int)}).sort_values("hours missing", ascending=False))"""))
+
+C.append(md("""### 7.4 Exploring the data"""))
+C.append(code("""fig, axes = plt.subplots(1, 2, figsize=(15, 3.5))
+axes[0].plot(mote_raw["date"], mote_raw["sea_water_temperature"], lw=0.4, color="tab:red"); axes[0].set_title("Water temperature at 2 m (°C)")
+clim = mote_raw.groupby(mote_raw["date"].dt.month)["sea_water_temperature"].mean()
+axes[1].bar(clim.index, clim.values, color="tab:red"); axes[1].set_title("Mean by month (°C)")
+plt.tight_layout(); plt.show()"""))
+C.append(md("""**What the figures show**
+
+* **Left: hourly water temperature.** The x-axis is time and the y-axis is °C. It cycles each year, from about 12–15 °C in winter to about 31–33 °C in summer. The straight line from March 2023 to March 2024 is the plot joining the two ends of the missing year (7.3), not data.
+* **Right: mean temperature by month.** The x-axis is the month and the y-axis is °C. The water is warmest June–September (about 30 °C) and coolest in January (about 17 °C)."""))
+
+C.append(md("""### 7.5 Findings
+* **One gap of almost a year:** no data from 22 Mar 2023 to Mar 2024 (8,736 missing hours). Otherwise the record is hourly, from one location and one depth, with no duplicates.
+* **Range 11.4–33.0 °C**; 100 readings are flagged suspect or fail.
+* **Warmest June–September**, just before the September–November red-tide peak (§1.4).
+* **Short record**, so it is combined with the bay water-quality and HABSOS temperatures into one longer series in §10."""))
+
+C.append(md("""### 7.6 Cleaning, step by step"""))
+C.append(code("""name = "MoteMarine_BottomTemp"
+log_step(name, "raw file", mote_raw)"""))
+C.append(md("""#### Step 1 — Keep readings that passed quality control (flag 1)
+The flags follow the QARTOD scheme: 1 = pass, 3 = suspect, 4 = fail [1]. Only passing readings are kept.
+
+**Source**
+1. U.S. Integrated Ocean Observing System (2020). *Manual for Real-Time Quality Control of In-situ Temperature and Salinity Data*, Version 2.1. https://doi.org/10.25923/x02m-m555, Table 3-1, p. 14."""))
+C.append(code("""mote = mote_raw[mote_raw["sea_water_temperature_qc_agg"] == 1][["date", "sea_water_temperature"]]
+show_step(name, mote_raw, mote, "readings that passed QC (flag 1) kept")
+LOG[-1]["note"] = "removed: " + ", ".join(f"flag {k}: {v}" for k, v in mote_raw.loc[mote_raw["sea_water_temperature_qc_agg"] != 1, "sea_water_temperature_qc_agg"].value_counts().sort_index().items())
+log_step(name, "date and temperature columns kept", mote, f"{mote['date'].min().date()} to {mote['date'].max().date()}; 22 Mar 2023 - Mar 2024 gap left unfilled")"""))
+C.append(md("""#### Deliberately *not* done
+* **Did not fill the 2023–2024 gap.** §10 fills those weeks from the other temperature sources instead."""))
+C.append(md("""### 7.7 Cleaning summary"""))
+C.append(code("""display(summarise_cleaning(name))
+del mote_raw"""))
+
 
 nb["cells"] = C
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}

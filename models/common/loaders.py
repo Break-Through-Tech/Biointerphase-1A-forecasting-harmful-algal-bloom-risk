@@ -12,6 +12,7 @@ Datasets (all from the 1A repo data/ folder):
   4 bradentonFL_tempData         daily air temp + rainfall
   5 Sarasota_Wind&Temp           KSRQ airport hourly weather (2022-07+)
   6 SarasotaWindData             gridded zonal wind u (2019+)
+  7 MoteMarine_BottomTemp        hourly water temp at Mote (2020-08 to 2025-03)
 """
 import numpy as np
 import pandas as pd
@@ -277,3 +278,32 @@ def load_uwind(log: CleaningLog) -> pd.DataFrame:
     log.record_step(name, "inside regional box, non-null", df,
              "file has only the east-west (u) component, no v")
     return df.groupby("date", as_index=False)["uwnd"].mean()
+
+
+# ---------------------------------------------------------------------------
+# 7. Mote Marine hourly water temperature
+# ---------------------------------------------------------------------------
+def load_mote(log: CleaningLog) -> pd.DataFrame:
+    """Load the hourly Mote Marine Laboratory water temperature (2 m depth).
+
+    Only readings that passed quality control (QARTOD flag 1) are kept.
+
+    Args:
+        log (CleaningLog): Log that receives the row count after each step.
+
+    Returns:
+        pandas.DataFrame: One row per hour, with columns date and
+        sea_water_temperature (°C).
+
+    Example:
+        >>> len(load_mote(CleaningLog()))
+        31629
+    """
+    name = "MoteMarine_BottomTemp"
+    df = read_erddap(DATA_DIR / "MoteMarine_BottomTemp.csv")
+    log.record_step(name, "raw", df)
+    # IOOS QARTOD flags: 1 pass, 3 suspect, 4 fail. Keep passes only (loses 100 rows).
+    df = df[df["sea_water_temperature_qc_agg"] == 1]
+    log.record_step(name, "QC flag == 1 (pass)", df)
+    df["date"] = pd.to_datetime(df["time"]).dt.tz_localize(None)
+    return df[["date", "sea_water_temperature"]]

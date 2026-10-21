@@ -159,3 +159,12 @@ def test_load_uwind_converts_longitude_and_averages_the_box(data_dir):
         "2019-01-01T00:00:00Z,27.0,270.0,10.0\n")        # -90.0: outside
     u = loaders.load_uwind(CleaningLog())
     assert u["uwnd"].tolist() == [-3.0]
+
+
+# ---------------------------------------------------------------- Mote
+def test_load_mote_keeps_readings_that_passed_quality_control(data_dir):
+    (data_dir / "MoteMarine_BottomTemp.csv").write_text(
+        "time,sea_water_temperature,sea_water_temperature_qc_agg\nUTC,degree_Celsius,\n"
+        "2021-06-01T00:00:00Z,29.0,1\n2021-06-01T01:00:00Z,45.0,4\n2021-06-01T02:00:00Z,29.5,3\n")
+    m = loaders.load_mote(CleaningLog())
+    assert m["sea_water_temperature"].tolist() == [29.0]
