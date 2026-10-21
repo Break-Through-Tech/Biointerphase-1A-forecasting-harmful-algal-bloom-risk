@@ -1018,6 +1018,103 @@ C.append(md("""### 3.7 Cleaning summary"""))
 C.append(code("""display(summarise_cleaning(name))
 del nut_raw, n_dd, n0, n1, n2, n3, n4"""))
 
+# ---------------------------------------------------------------------------
+# 4. Bradenton
+C.append(md("""---
+## 4. `bradentonFL_tempData` — daily air temperature and rain
+
+| | |
+|---|---|
+| **What** | Daily precipitation (inches) and max / min / mean air temperature (°F) |
+| **Source** | Florida Climate Center (FSU), station 80945 (Bradenton) [1] |
+| **Coverage** | 2015 – 2025 |
+| **Role** | Rainfall and runoff raise nutrient loads to Florida estuaries [2] |
+
+**This section:** 4.1 load and first look · 4.2 data-quality checks · 4.3 what are the −99.9 values? · 4.4 exploring the data · 4.5 findings · 4.6 cleaning, step by step · 4.7 cleaning summary
+
+**Sources**
+1. Florida Climate Center, *Downloadable data*. https://climatecenter.fsu.edu/climate-data-access-tools/downloadable-data
+2. Phlips, E. J., Badylak, S., Nelson, N. G., & Havens, K. E. (2020). Hurricanes, El Niño and harmful algal blooms in two sub-tropical Florida estuaries: Direct and indirect impacts. *Scientific Reports*, 10, 1910. https://doi.org/10.1038/s41598-020-58771-4"""))
+
+C.append(md("""### 4.1 Load and first look
+One row per day."""))
+C.append(code("""brad_raw = pd.read_csv(find_file("bradentonFL_tempData"), skipinitialspace=True)
+brad_raw.columns = [c.strip().lower().replace(" ", "_") for c in brad_raw.columns]
+brad_raw["date"] = pd.to_datetime(brad_raw[["year", "month", "day"]])
+for c in ["precipitation", "max_temp", "min_temp", "mean_temp"]:
+    brad_raw[c] = pd.to_numeric(brad_raw[c], errors="coerce")   # blank cells -> NaN
+print(f"{len(brad_raw):,} rows x {brad_raw.shape[1]} columns")
+display(brad_raw.head(3))
+profile_columns(brad_raw)"""))
+
+C.append(md("""### 4.2 Data-quality checks"""))
+C.append(code("""ok = brad_raw[["precipitation", "max_temp", "min_temp"]].where(brad_raw[["precipitation", "max_temp", "min_temp"]] > -99)
+pd.DataFrame([
+    ("Date range", f"{brad_raw['date'].min().date()} -> {brad_raw['date'].max().date()}"),
+    ("Duplicate dates", int(brad_raw["date"].duplicated().sum())),
+    ("Missing calendar days", len(pd.date_range(brad_raw.date.min(), brad_raw.date.max())) - brad_raw["date"].nunique()),
+    ("Sentinel values (<= -99)", str({c: int((brad_raw[c] <= -99).sum()) for c in ["precipitation", "max_temp", "min_temp", "mean_temp"]})),
+    ("MEAN TEMP blank", f"{brad_raw['mean_temp'].isna().mean():.0%}"),
+    ("Max temp range (°F, excluding sentinels)", f"{ok['max_temp'].min()} to {ok['max_temp'].max()}"),
+    ("Min temp range (°F, excluding sentinels)", f"{ok['min_temp'].min()} to {ok['min_temp'].max()}"),
+    ("Days where min > max", int((ok["min_temp"] > ok["max_temp"]).sum())),
+    ("Largest daily rain (inches)", ok["precipitation"].max()),
+], columns=["check", "result"])"""))
+
+C.append(md("""### 4.3 What are the −99.9 values?
+The Florida Climate Center states: "Values of -99.9 for temperature or -99.99 for precipitation represent missing data" [1]. Left in, one of them would pull a weekly average temperature down by about 25 °F: a week of 75 °F days averages 75 °F, but with one day recorded as −99.9 it averages (6 × 75 − 99.9) / 7 ≈ 50 °F.
+
+**Source**
+1. Florida Climate Center, *Downloadable data*. https://climatecenter.fsu.edu/climate-data-access-tools/downloadable-data"""))
+C.append(code("""brad_raw[(brad_raw[["precipitation", "max_temp", "min_temp", "mean_temp"]] <= -99).any(axis=1)]"""))
+
+C.append(md("""### 4.4 Exploring the data"""))
+C.append(code("""fig, axes = plt.subplots(1, 2, figsize=(15, 3.5))
+axes[0].plot(brad_raw["date"], (ok["max_temp"] + ok["min_temp"]) / 2, lw=0.5, color="tab:orange")
+axes[0].set_title("Daily mean air temperature (°F)")
+rain_m = ok.groupby(brad_raw["date"].dt.month)["precipitation"].sum() / brad_raw["date"].dt.year.nunique()
+axes[1].bar(rain_m.index, rain_m.values, color="tab:blue"); axes[1].set_title("Average rain per month (inches)")
+plt.tight_layout(); plt.show()"""))
+C.append(md("""**What the figures show**
+
+* **Left: daily mean air temperature.** The x-axis is time and the y-axis is °F. It repeats each year, dipping to about 45–60 °F in winter and reaching about 85 °F in summer.
+* **Right: average rain per month.** The x-axis is the month (1 = January) and the y-axis is the average total rain for that month, in inches. Rain is highest in June–September (about 7–12.5 inches a month, with August the wettest) and lowest in November–April."""))
+
+C.append(md("""### 4.5 Findings
+* **Complete daily record**, no duplicate dates.
+* **Missing-data markers:** 7 max-temperature, 8 min-temperature, 5 mean-temperature and 5 precipitation values are −99.9 or −99.99 (4.3). `MEAN TEMP` is also blank on 731 days.
+* **Rain is highest June–September**, just before the September–November red-tide peak (§1.4). Rain features are lagged 1–12 weeks in §10.
+* **Covers 2015–2025 only**, so rain features are missing for 2010–2014."""))
+
+C.append(md("""### 4.6 Cleaning, step by step"""))
+C.append(code("""name = "bradentonFL_tempData"
+log_step(name, "raw file", brad_raw)"""))
+C.append(md("""#### Step 1 — Missing-data markers → missing (rows kept)
+−99.9 and −99.99 are the provider's missing-data codes (4.3), so they are set to missing."""))
+C.append(code("""brad = brad_raw.copy()
+for c in ["precipitation", "max_temp", "min_temp", "mean_temp"]:
+    s = brad[c] <= -99
+    print(f"{c}: {s.sum()} markers -> missing")
+    brad.loc[s, c] = np.nan
+log_step(name, "sentinels -> missing", brad)"""))
+C.append(md("""#### Step 2 — Fill blank mean temperature from max and min (rows kept)
+In U.S. weather records, the daily average temperature is defined as the average of the day's maximum and minimum [1]. This file follows that definition: every recorded mean temperature (3,282 days) equals (max + min) / 2 exactly. The 731 blank days are filled with the same formula.
+
+**Source**
+1. NOAA NCEI, *Local Climatological Data (LCD) Dataset Documentation*: "Average temperature for the day … This is based on the arithmetic average of the maximum and minimum temperature for the day." https://www.ncei.noaa.gov/pub/data/cdo/documentation/LCD_documentation.pdf"""))
+C.append(code("""blank = brad["mean_temp"].isna()
+brad["mean_temp"] = brad["mean_temp"].fillna((brad["max_temp"] + brad["min_temp"]) / 2)
+print(f"mean temp filled: {(blank & brad['mean_temp'].notna()).sum():,} days | still missing: {brad['mean_temp'].isna().sum()}")
+log_step(name, "mean temp filled from (max+min)/2", brad)"""))
+C.append(md("""#### Deliberately *not* done
+* **Did not remove heavy-rain days as outliers.** Large storms deliver the nutrient pulses the rain features are meant to capture [1].
+
+**Source**
+1. Phlips, E. J., et al. (2020). Hurricanes, El Niño and harmful algal blooms in two sub-tropical Florida estuaries: Direct and indirect impacts. *Scientific Reports*, 10, 1910. https://doi.org/10.1038/s41598-020-58771-4"""))
+C.append(md("""### 4.7 Cleaning summary"""))
+C.append(code("""display(summarise_cleaning(name))
+del brad_raw, ok"""))
+
 
 nb["cells"] = C
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}

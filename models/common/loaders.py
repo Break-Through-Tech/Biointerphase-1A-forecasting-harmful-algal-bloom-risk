@@ -9,6 +9,7 @@ Datasets (all from the 1A repo data/ folder):
   1 habsos_cellcounts            K. brevis cell counts      -> LABEL + lag features
   2 ChlorophyllaConcentration*   satellite chl-a (2 files)  -> via processed/chlorophyll_merged.parquet
   3 NutrientsFL_2006_2025        Sarasota Bay + creek water quality
+  4 bradentonFL_tempData         daily air temp + rainfall
 """
 import numpy as np
 import pandas as pd
@@ -167,3 +168,38 @@ def load_nutrients(log: CleaningLog) -> pd.DataFrame:
     log.record_step(name, "drop near-bottom readings", df)
     df["source"] = df["DataSource"].map({"SARASOTAES_WQ": "bay", "SARASOTA_COASTALCREEK_WQ": "creek"})
     return df[["date", "source", "var", "Result_Value"]].rename(columns={"Result_Value": "value"})
+
+
+# ---------------------------------------------------------------------------
+# 4. Bradenton daily air temperature + rainfall
+# ---------------------------------------------------------------------------
+def load_bradenton(log: CleaningLog) -> pd.DataFrame:
+    """Load the Bradenton daily air temperature and rain record.
+
+    −99.9 / −99.99 missing-data codes become NaN, and blank mean temperatures
+    are filled with (max + min) / 2, the standard daily-mean definition.
+
+    Args:
+        log (CleaningLog): Log that receives the row count after each step.
+
+    Returns:
+        pandas.DataFrame: One row per day, with columns date, precipitation (inches)
+        and max_temp, min_temp, mean_temp (°F).
+
+    Example:
+        >>> b = load_bradenton(CleaningLog())
+        >>> len(b), str(b["date"].min().date()), str(b["date"].max().date())
+        (4018, '2015-01-01', '2025-12-31')
+    """
+    name = "bradentonFL_tempData"
+    df = pd.read_csv(DATA_DIR / "bradentonFL_tempData.csv", skipinitialspace=True)
+    df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+    log.record_step(name, "raw", df)
+    df["date"] = pd.to_datetime(df[["year", "month", "day"]])
+    for c in ["precipitation", "max_temp", "min_temp", "mean_temp"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+        df.loc[df[c] <= -99, c] = np.nan   # -99.9 / -99.99 are documented missing-value sentinels
+    # MEAN TEMP is blank for 18% of days; the daily mean is (max+min)/2 by definition.
+    df["mean_temp"] = df["mean_temp"].fillna((df["max_temp"] + df["min_temp"]) / 2)
+    log.record_step(name, "sentinels -> NaN, mean temp filled from max/min", df)
+    return df[["date", "precipitation", "max_temp", "min_temp", "mean_temp"]]

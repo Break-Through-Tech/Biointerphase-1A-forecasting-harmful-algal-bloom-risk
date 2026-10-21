@@ -119,3 +119,17 @@ def test_load_nutrients_labels_bay_and_creek(data_dir):
     n = loaders.load_nutrients(CleaningLog())
     assert sorted(n["source"].unique()) == ["bay", "creek"]
     assert n.columns.tolist() == ["date", "source", "var", "value"]
+
+
+# ---------------------------------------------------------------- Bradenton
+def test_load_bradenton_blanks_sentinels_and_fills_mean_temperature(data_dir):
+    (data_dir / "bradentonFL_tempData.csv").write_text(
+        "COOPID, YEAR, MONTH, DAY, PRECIPITATION, MAX TEMP, MIN TEMP, MEAN TEMP\n"
+        "80945,2015,1,1,0.5,80,60,70\n"
+        "80945,2015,1,2,-99.99,82,62, \n"
+        "80945,2015,1,3,0.0,-99.9,60,65\n")
+    b = loaders.load_bradenton(CleaningLog()).set_index("date")
+    assert np.isnan(b.loc["2015-01-02", "precipitation"])
+    assert b.loc["2015-01-02", "mean_temp"] == 72.0          # (82 + 62) / 2
+    assert np.isnan(b.loc["2015-01-03", "max_temp"])
+    assert b.loc["2015-01-03", "mean_temp"] == 65.0          # recorded value kept
