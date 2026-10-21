@@ -1115,6 +1115,129 @@ C.append(md("""### 4.7 Cleaning summary"""))
 C.append(code("""display(summarise_cleaning(name))
 del brad_raw, ok"""))
 
+# ---------------------------------------------------------------------------
+# 5. KSRQ
+C.append(md("""---
+## 5. `Sarasota_Wind&Temp` — hourly airport weather (KSRQ)
+
+| | |
+|---|---|
+| **What** | Wind speed and direction, gusts, air and dew-point temperature, pressure, visibility |
+| **Source** | NOAA National Weather Service station at Sarasota–Bradenton airport (KSRQ), via SECOORA ERDDAP [1] |
+| **Coverage** | Jul 2022 – Jun 2026 |
+| **Role** | Wind: *K. brevis* bloom probability is much higher under northerly winds [2] |
+
+**This section:** 5.1 load and first look · 5.2 data-quality checks · 5.3 exploring the data · 5.4 findings · 5.5 cleaning, step by step · 5.6 cleaning summary
+
+**Sources**
+1. SECOORA ERDDAP, *gov_noaa_awc_ksrq*. https://erddap.secoora.org/erddap/tabledap/gov_noaa_awc_ksrq.html
+2. Li, M. F., Glibert, P. M., & Lyubchich, V. (2021). Machine learning classification algorithms for predicting *Karenia brevis* blooms on the West Florida Shelf. *Journal of Marine Science and Engineering*, 9(9), 999. https://doi.org/10.3390/jmse9090999"""))
+
+C.append(md("""### 5.1 Load and first look
+One row per hourly weather report."""))
+C.append(code("""ksrq_raw = read_erddap("Sarasota_Wind&Temp")
+ksrq_raw["date"] = pd.to_datetime(ksrq_raw["time"]).dt.tz_localize(None)
+print(f"{len(ksrq_raw):,} rows x {ksrq_raw.shape[1]} columns")
+display(ksrq_raw.head(3))
+profile_columns(ksrq_raw)"""))
+
+C.append(md("""### 5.2 Data-quality checks"""))
+C.append(code("""steps = ksrq_raw["date"].diff().dropna()
+pd.DataFrame([
+    ("Date range", f"{ksrq_raw['date'].min().date()} -> {ksrq_raw['date'].max().date()}"),
+    ("Duplicate timestamps", int(ksrq_raw["date"].duplicated().sum())),
+    ("Most common time step", str(steps.mode()[0])),
+    ("Gaps longer than 3 hours", int((steps > pd.Timedelta(hours=3)).sum())),
+    ("Wind gust missing", f"{ksrq_raw['wind_speed_of_gust'].isna().mean():.0%}"),
+    ("Pressure missing", f"{ksrq_raw['air_pressure_at_mean_sea_level'].isna().mean():.0%}"),
+    ("QC flag values (all columns)", str(sorted(set(np.ravel(ksrq_raw.filter(like='_qc_agg').values))))),
+    ("Wind speed range (m/s)", f"{ksrq_raw['wind_speed'].min()} to {ksrq_raw['wind_speed'].max():.1f}"),
+    ("Wind direction outside 0-360", int((~ksrq_raw["wind_from_direction"].dropna().between(0, 360)).sum())),
+    ("Air temp range (°C)", f"{ksrq_raw['air_temperature'].min()} to {ksrq_raw['air_temperature'].max()}"),
+    ("Air temp outside -5 to 45 °C", int((ksrq_raw["air_temperature"].notna() & ~ksrq_raw["air_temperature"].between(-5, 45)).sum())),
+    ("Dew point range (°C)", f"{ksrq_raw['dew_point_temperature'].min()} to {ksrq_raw['dew_point_temperature'].max()}"),
+], columns=["check", "result"])"""))
+
+C.append(md("""### 5.3 Exploring the data"""))
+C.append(code("""rad = np.deg2rad(ksrq_raw["wind_from_direction"])   # components for this plot only; added as columns in Step 1
+comp = pd.DataFrame({"wind_u": -ksrq_raw["wind_speed"] * np.sin(rad), "wind_v": -ksrq_raw["wind_speed"] * np.cos(rad)})
+fig, axes = plt.subplots(1, 3, figsize=(15, 3.5))
+axes[0].hist(ksrq_raw["wind_from_direction"].dropna(), bins=36, color="tab:gray"); axes[0].set_title("Wind FROM direction (degrees)")
+w = comp.groupby(ksrq_raw["date"].dt.month).mean()
+axes[1].plot(w.index, w["wind_u"], "-o", label="u (+ = toward east)"); axes[1].plot(w.index, w["wind_v"], "-o", label="v (+ = toward north)")
+axes[1].axhline(0, color="0.5", lw=0.8); axes[1].legend(frameon=False, fontsize=8); axes[1].set_title("Mean wind components by month (m/s)")
+axes[2].plot(ksrq_raw["date"], ksrq_raw["air_temperature"], lw=0.3, color="tab:orange"); axes[2].set_title("Air temperature (°C)")
+plt.tight_layout(); plt.show()"""))
+C.append(md("""**What the figures show**
+
+* **Left: wind direction.** The x-axis is the direction the wind blows from (0/360 = north, 90 = east, 180 = south, 270 = west) and the y-axis is the number of reports. The tallest bar is at 0°: 3,336 reports have direction 0, and 3,145 of them have a wind speed of 0. Apart from that, easterly winds (about 50–130°) are most common.
+* **Middle: mean wind components by month.** The x-axis is the month and the y-axis is m/s. Blue is u (positive = blowing toward the east) and orange is v (positive = blowing toward the north); see Step 1 for how they are computed. Both are negative from September to January, meaning wind from the north-east, and most negative in October.
+* **Right: hourly air temperature.** The x-axis is time and the y-axis is °C. The sharp spikes, down to −60 °C and up to 50 °C, are the out-of-range values removed in Step 2."""))
+C.append(code("""m = comp.set_index(ksrq_raw["date"]).resample("MS").mean()
+fig, ax = plt.subplots(figsize=(13, 3))
+ax.plot(m.index, m["wind_u"], "-o", ms=3, label="u (+ = toward east)"); ax.plot(m.index, m["wind_v"], "-o", ms=3, label="v (+ = toward north)")
+ax.axhline(0, color="0.5", lw=0.8); ax.legend(frameon=False, fontsize=8)
+ax.set_title("Airport (KSRQ): monthly mean wind components over time (m/s)"); plt.show()"""))
+C.append(md("""**What the figure shows**
+
+* **Monthly mean wind components, July 2022 – June 2026.** The x-axis is time and the y-axis is m/s; blue is u and orange is v.
+* Both components are below zero (wind from the north-east) every October–December, in 2022, 2023, 2024 and 2025. The lowest values are in October 2024 (u −2.8, v −1.7 m/s) and October 2025 (u −2.2, v −1.7 m/s)."""))
+
+C.append(md("""### 5.4 Findings
+* **Near-complete hourly record**, no duplicate timestamps; 50 gaps longer than 3 hours.
+* **Wind gust is 87 % missing** and pressure 18 %.
+* **Every QC flag is 2, "not evaluated"** [1], so the flags can't be used to filter.
+* **8 air temperatures far outside the normal range:** seven between −60.6 and −6.1 °C on 13–14 May 2024, and one of 50 °C on 30 May 2023.
+* **Winds come from the north-east September–January** (u and v both negative, most negative in October). Red tide peaks in the same months (§1.4), so wind and season are hard to separate with about 4 years of data.
+* **Starts in July 2022**, and HABSOS sampling in the Sarasota box is near zero in 2022–2023 (§1.5), so there is little overlap with the label.
+
+**Source**
+1. U.S. Integrated Ocean Observing System (2020). *Manual for Real-Time Quality Control of In-situ Temperature and Salinity Data*, Version 2.1. https://doi.org/10.25923/x02m-m555, Table 3-1 (flags: 1 = pass, 2 = not evaluated, 3 = suspect, 4 = fail, 9 = missing), p. 14."""))
+
+C.append(md("""### 5.5 Cleaning, step by step"""))
+C.append(code("""name = "Sarasota_Wind&Temp (KSRQ)"
+log_step(name, "raw file", ksrq_raw)"""))
+C.append(md("""#### Step 1 — Split wind direction into north–south and east–west parts (rows kept)
+*K. brevis* bloom probability is much higher under northerly winds than southerly winds [1]. Wind direction is an angle, which can't be averaged into weekly values (350° and 10° average to 180°), so each reading is split into a north–south part (`wind_v`) and an east–west part (`wind_u`). Negative `wind_v` = wind from the north. Li et al. use the same split and sign [1].
+
+**Source**
+1. Li, M. F., Glibert, P. M., & Lyubchich, V. (2021). Machine learning classification algorithms for predicting *Karenia brevis* blooms on the West Florida Shelf. *Journal of Marine Science and Engineering*, 9(9), 999. https://doi.org/10.3390/jmse9090999"""))
+C.append(code("""demo = pd.DataFrame({"wind_from_direction": [350, 10], "wind_speed": [5, 5]})
+r = np.deg2rad(demo["wind_from_direction"])
+u, v = -demo["wind_speed"] * np.sin(r), -demo["wind_speed"] * np.cos(r)
+back = (np.rad2deg(np.arctan2(-u.mean(), -v.mean())) + 360) % 360
+print(f"plain average of the angles: {demo['wind_from_direction'].mean():.0f} deg (wrong)")
+print(f"average via u/v components: {back:.0f} deg (right - still a north wind)")"""))
+C.append(code("""rad = np.deg2rad(ksrq_raw["wind_from_direction"])
+ksrq_raw["wind_u"] = -ksrq_raw["wind_speed"] * np.sin(rad)   # + = blowing toward the east
+ksrq_raw["wind_v"] = -ksrq_raw["wind_speed"] * np.cos(rad)   # + = blowing toward the north; northerly wind -> v < 0
+log_step(name, "wind_u and wind_v added", ksrq_raw, "values added, rows kept")
+ksrq_raw[["date", "wind_from_direction", "wind_speed", "wind_u", "wind_v"]].head()"""))
+C.append(md("""#### Step 2 — Blank out-of-range air and dew-point temperatures (rows kept)
+A gross range test [1] with project-chosen spans: air temperature −5 to 45 °C and dew point −10 to 35 °C. It catches the 8 air temperatures listed in 5.4. Only the temperature is set to missing; the wind values in the same reports stay.
+
+**Source**
+1. U.S. Integrated Ocean Observing System (2020). *Manual for Real-Time Quality Control of In-situ Temperature and Salinity Data*, Version 2.1. https://doi.org/10.25923/x02m-m555, Test 4 (Gross Range Test), p. 17."""))
+C.append(code("""bad_air = ksrq_raw["air_temperature"].notna() & ~ksrq_raw["air_temperature"].between(-5, 45)
+bad_dew = ksrq_raw["dew_point_temperature"].notna() & ~ksrq_raw["dew_point_temperature"].between(-10, 35)
+display(ksrq_raw.loc[bad_air | bad_dew, ["date", "air_temperature", "dew_point_temperature", "wind_speed"]])
+ksrq_raw.loc[bad_air, "air_temperature"] = np.nan
+ksrq_raw.loc[bad_dew, "dew_point_temperature"] = np.nan
+print(f"air temperatures blanked: {bad_air.sum()} | dew points blanked: {bad_dew.sum()}")
+log_step(name, "out-of-range air and dew-point temperatures blanked", ksrq_raw, f"{bad_air.sum()} air temperatures and {bad_dew.sum()} dew points set to missing, rows kept")"""))
+C.append(md("""#### Step 3 — Drop reports with neither wind nor air temperature"""))
+C.append(code("""k1 = ksrq_raw.dropna(subset=["wind_speed", "air_temperature"], how="all")
+show_step(name, ksrq_raw, k1, "reports with neither wind nor air temperature dropped")
+LOG[-1]["note"] = f"{len(ksrq_raw) - len(k1):,} reports removed\""""))
+C.append(md("""#### Step 4 — Keep only the columns used as features
+Dropped: wind gust (87 % missing), visibility (not used as a feature) and the QC-flag columns (all "not evaluated")."""))
+C.append(code("""ksrq = k1[["date", "wind_speed", "wind_u", "wind_v", "air_temperature", "dew_point_temperature", "air_pressure_at_mean_sea_level"]]
+print("kept columns:", list(ksrq.columns))
+log_step(name, "feature columns kept", ksrq, "dropped wind gust (87 % missing), visibility and QC-flag columns; rows kept")"""))
+C.append(md("""### 5.6 Cleaning summary"""))
+C.append(code("""display(summarise_cleaning(name))
+del ksrq_raw, k1"""))
+
 
 nb["cells"] = C
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}

@@ -133,3 +133,18 @@ def test_load_bradenton_blanks_sentinels_and_fills_mean_temperature(data_dir):
     assert b.loc["2015-01-02", "mean_temp"] == 72.0          # (82 + 62) / 2
     assert np.isnan(b.loc["2015-01-03", "max_temp"])
     assert b.loc["2015-01-03", "mean_temp"] == 65.0          # recorded value kept
+
+
+# ---------------------------------------------------------------- airport (KSRQ)
+def test_load_ksrq_splits_wind_and_blanks_bad_temperatures(data_dir):
+    (data_dir / "Sarasota_Wind&Temp.csv").write_text(
+        "time,wind_from_direction,wind_speed,air_temperature,dew_point_temperature,air_pressure_at_mean_sea_level\n"
+        "UTC,degrees,m.s-1,degree_Celsius,degree_Celsius,millibars\n"
+        "2023-01-01T00:00:00Z,0,2.0,20,10,1015\n"        # from the north
+        "2023-01-01T01:00:00Z,90,2.0,60,10,1015\n"       # from the east; air temp 60 invalid
+        "2023-01-01T02:00:00Z,,,,,\n")                    # nothing recorded (dropped)
+    k = loaders.load_ksrq(CleaningLog())
+    assert len(k) == 2
+    assert k["wind_u"].round(6).tolist() == [0.0, -2.0]
+    assert k["wind_v"].round(6).tolist() == [-2.0, 0.0]
+    assert np.isnan(k["air_temperature"].iloc[1])

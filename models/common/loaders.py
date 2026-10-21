@@ -10,6 +10,7 @@ Datasets (all from the 1A repo data/ folder):
   2 ChlorophyllaConcentration*   satellite chl-a (2 files)  -> via processed/chlorophyll_merged.parquet
   3 NutrientsFL_2006_2025        Sarasota Bay + creek water quality
   4 bradentonFL_tempData         daily air temp + rainfall
+  5 Sarasota_Wind&Temp           KSRQ airport hourly weather (2022-07+)
 """
 import numpy as np
 import pandas as pd
@@ -17,7 +18,7 @@ import pandas as pd
 from .cleaning_log import CleaningLog
 from .cleaning_rules import NUTRIENT_MAP, NUTRIENT_VALID
 from .config import DATA_DIR, REGIONAL_BOX, TARGET_BOX
-from .helpers import is_in_box
+from .helpers import is_in_box, read_erddap
 
 
 # ---------------------------------------------------------------------------
@@ -203,3 +204,45 @@ def load_bradenton(log: CleaningLog) -> pd.DataFrame:
     df["mean_temp"] = df["mean_temp"].fillna((df["max_temp"] + df["min_temp"]) / 2)
     log.record_step(name, "sentinels -> NaN, mean temp filled from max/min", df)
     return df[["date", "precipitation", "max_temp", "min_temp", "mean_temp"]]
+
+
+# ---------------------------------------------------------------------------
+# 5. KSRQ airport hourly weather
+# ---------------------------------------------------------------------------
+def load_ksrq(log: CleaningLog) -> pd.DataFrame:
+    """Load the hourly Sarasota–Bradenton airport (KSRQ) weather reports.
+
+    Wind direction and speed are split into east–west (u) and north–south (v)
+    parts so they can be averaged; out-of-range air and dew-point temperatures are
+    blanked; reports with neither wind nor air temperature are dropped.
+
+    Args:
+        log (CleaningLog): Log that receives the row count after each step.
+
+    Returns:
+        pandas.DataFrame: One row per report, with columns date, wind_speed, wind_u,
+        wind_v (m/s; wind_v < 0 = wind from the north), air_temperature,
+        dew_point_temperature (°C) and air_pressure_at_mean_sea_level.
+
+    Example:
+        >>> len(load_ksrq(CleaningLog()))
+        41178
+    """
+    name = "Sarasota_Wind&Temp (KSRQ)"
+    df = read_erddap(DATA_DIR / "Sarasota_Wind&Temp.csv")
+    log.record_step(name, "raw", df)
+    df["date"] = pd.to_datetime(df["time"]).dt.tz_localize(None)
+    # wind_from_direction is where wind blows FROM (met convention). Convert to
+    # u (eastward) / v (northward) components so weekly averaging is a vector mean
+    # (Li et al. 2021). A northerly, upwelling-favourable wind has v < 0.
+    rad = np.deg2rad(df["wind_from_direction"])
+    df["wind_u"] = -df["wind_speed"] * np.sin(rad)
+    df["wind_v"] = -df["wind_speed"] * np.cos(rad)
+    # Sensor faults: e.g. -60.6 C on 13-14 May 2024 and 50 C on 30 May 2023. Blank the value, keep the wind.
+    df.loc[~df["air_temperature"].between(-5, 45), "air_temperature"] = np.nan
+    df.loc[~df["dew_point_temperature"].between(-10, 35), "dew_point_temperature"] = np.nan
+    df = df.dropna(subset=["wind_speed", "air_temperature"], how="all")
+    log.record_step(name, "rows with wind or air temp", df,
+             "dropped gust (87% missing) and visibility (not a HAB driver)")
+    return df[["date", "wind_speed", "wind_u", "wind_v", "air_temperature",
+               "dew_point_temperature", "air_pressure_at_mean_sea_level"]]
