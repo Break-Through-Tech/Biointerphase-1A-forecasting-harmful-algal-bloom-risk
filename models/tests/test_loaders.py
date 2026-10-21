@@ -78,3 +78,44 @@ def test_load_chlorophyll_keeps_target_box_and_valid_values(data_dir):
 def test_load_chlorophyll_says_which_notebook_to_run_if_missing(data_dir):
     with pytest.raises(FileNotFoundError, match="merge_chlorophyll.ipynb"):
         loaders.load_chlorophyll(CleaningLog())
+
+
+# ---------------------------------------------------------------- nutrients
+def write_nutrients(d):
+    rows = [  # source, date, characteristic, value, qualifier, relative depth
+        ("SARASOTAES_WQ", "1/5/2015", "Nitrogen", 0.4, "", "Surface"),
+        ("SARASOTAES_WQ", "1/5/2015", "Nitrogen", 0.4, "", "Surface"),                 # exact duplicate
+        ("SARASOTAES_WQ", "1/5/2015", "Phosphorus as P", 0.02, "U", "Surface"),        # not detected
+        ("SARASOTAES_WQ", "1/5/2015", "Temperature, water", 150, "", "Surface"),       # out of range
+        ("SARASOTAES_WQ", "1/5/2015", "Nitrogen", 0.5, "", "Near Bottom"),             # near bottom
+        ("SARASOTA_COASTALCREEK_WQ", "1/6/2015", "Nitrogen", 1.2, "", "Surface"),
+        ("SARASOTAES_WQ", "1/5/2015", "Some other measurement", 3.0, "", "Surface"),  # not in NUTRIENT_MAP
+    ]
+    pd.DataFrame(rows, columns=["DataSource", "Activity_Start_Date", "Characteristic", "Result_Value",
+                                "Value_Qualifier", "RelativeDepth"]).to_csv(d / "NutrientsFL_2006_2025.csv", index=False)
+
+
+def test_load_nutrients_applies_each_cleaning_step(data_dir):
+    write_nutrients(data_dir)
+    log = CleaningLog()
+    n = loaders.load_nutrients(log)
+    s = steps(log)
+    assert s["raw"] == 7
+    assert s["drop exact duplicate rows"] == 6
+    assert s["all characteristics, names standardised"] == 5
+    assert s["values outside the expected range removed"] == 4
+    assert s["drop near-bottom readings"] == 3
+    assert len(n) == 3
+
+
+def test_load_nutrients_halves_not_detected_values(data_dir):
+    write_nutrients(data_dir)
+    n = loaders.load_nutrients(CleaningLog())
+    assert n.loc[n["var"] == "tp", "value"].tolist() == [0.01]
+
+
+def test_load_nutrients_labels_bay_and_creek(data_dir):
+    write_nutrients(data_dir)
+    n = loaders.load_nutrients(CleaningLog())
+    assert sorted(n["source"].unique()) == ["bay", "creek"]
+    assert n.columns.tolist() == ["date", "source", "var", "value"]

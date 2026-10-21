@@ -8,11 +8,13 @@ the comments next to the step.
 Datasets (all from the 1A repo data/ folder):
   1 habsos_cellcounts            K. brevis cell counts      -> LABEL + lag features
   2 ChlorophyllaConcentration*   satellite chl-a (2 files)  -> via processed/chlorophyll_merged.parquet
+  3 NutrientsFL_2006_2025        Sarasota Bay + creek water quality
 """
 import numpy as np
 import pandas as pd
 
 from .cleaning_log import CleaningLog
+from .cleaning_rules import NUTRIENT_MAP, NUTRIENT_VALID
 from .config import DATA_DIR, REGIONAL_BOX, TARGET_BOX
 from .helpers import is_in_box
 
@@ -112,3 +114,56 @@ def load_chlorophyll(log: CleaningLog) -> pd.DataFrame:
     df = df.dropna(subset=["chlor_a"])
     log.record_step(name, "non-null chl-a", df)
     return df[["date", "latitude", "longitude", "chlor_a", "coastal"]]
+
+
+# ---------------------------------------------------------------------------
+# 3. Sarasota water-quality monitoring (estuary + coastal creeks)
+# ---------------------------------------------------------------------------
+def load_nutrients(log: CleaningLog) -> pd.DataFrame:
+    """Load and clean the Sarasota County water-quality measurements.
+
+    Steps: drop exact duplicates; standardise names via NUTRIENT_MAP (cleaning_rules.py); set
+    not-detected (U) values to half the detection limit; remove values outside
+    NUTRIENT_VALID (cleaning_rules.py); drop near-bottom readings; label each row bay or creek.
+
+    Args:
+        log (CleaningLog): Log that receives the row count after each step.
+
+    Returns:
+        pandas.DataFrame: Long format, one row per measurement, with columns
+        date, source ("bay" or "creek"), var (short name, e.g. "tn") and value.
+
+    Example:
+        >>> n = load_nutrients(CleaningLog())
+        >>> len(n), sorted(n["source"].unique())
+        (447524, ['bay', 'creek'])
+    """
+    name = "NutrientsFL_2006_2025"
+    df = pd.read_csv(DATA_DIR / "NutrientsFL_2006_2025.csv", low_memory=False)
+    log.record_step(name, "raw", df)
+    # Identical rows (same station, time, characteristic and value) are re-entries, not new measurements.
+    df = df.drop_duplicates()
+    log.record_step(name, "drop exact duplicate rows", df)
+    df["date"] = pd.to_datetime(df["Activity_Start_Date"], errors="coerce")
+    df["var"] = df["Characteristic"].str.lower().map(NUTRIENT_MAP)
+    df = df.dropna(subset=["date", "var", "Result_Value"])
+    log.record_step(name, "all characteristics, names standardised", df)
+
+    # 'U' = analyte not detected; reported value is the detection limit.
+    # Half the detection limit is the standard substitution for censored values.
+    nd = df["Value_Qualifier"].astype(str).str.contains("U")
+    df.loc[nd, "Result_Value"] = df.loc[nd, "Result_Value"] / 2
+
+    keep = np.ones(len(df), bool)
+    for var, (lo, hi) in NUTRIENT_VALID.items():
+        m = (df["var"] == var).to_numpy()
+        keep &= ~(m & ~df["Result_Value"].between(lo, hi).to_numpy())
+    df = df[keep]
+    log.record_step(name, "values outside the expected range removed", df)
+
+    # Surface + midwater only; near-bottom readings describe a different layer
+    # than the surface water where K. brevis is sampled.
+    df = df[df["RelativeDepth"] != "Near Bottom"]
+    log.record_step(name, "drop near-bottom readings", df)
+    df["source"] = df["DataSource"].map({"SARASOTAES_WQ": "bay", "SARASOTA_COASTALCREEK_WQ": "creek"})
+    return df[["date", "source", "var", "Result_Value"]].rename(columns={"Result_Value": "value"})

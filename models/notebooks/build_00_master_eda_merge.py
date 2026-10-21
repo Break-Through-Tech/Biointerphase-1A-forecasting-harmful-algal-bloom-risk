@@ -809,6 +809,215 @@ C.append(code("""for ds in ["chlorophyll DS1", "chlorophyll DS2", "chlorophyll (
     print(ds); display(summarise_cleaning(ds))
 del chl_raw, chl_obs, ds1, ds2, ds2_on1, d2, pairs, chl_all"""))
 
+# ---------------------------------------------------------------------------
+# 3. Nutrients
+C.append(md("""---
+## 3. `NutrientsFL_2006_2025` — Sarasota water quality
+
+| | |
+|---|---|
+| **What** | Lab and field measurements: nitrogen, phosphorus, chlorophyll, temperature, conductivity, oxygen, turbidity, bacteria… |
+| **Source** | Sarasota County Water Atlas (USF Water Institute) [1] |
+| **Coverage** | 1998 – Dec 2025; programs `SARASOTAES_WQ` (Sarasota County bays) and `SARASOTA_COASTALCREEK_WQ` (tidal creeks) |
+| **Role** | Nutrient drivers: nitrogen and phosphorus loading is linked to harmful algal blooms [2] |
+
+**This section:** 3.1 load and first look · 3.2 data-quality checks · 3.3 is each measurement recorded the same way? · 3.4 exploring the data · 3.5 findings · 3.6 cleaning, step by step · 3.7 cleaning summary
+
+**Sources**
+1. Sarasota County Water Atlas, *Water quality trends*. https://sarasota.wateratlas.usf.edu/water-quality-trends/
+2. Heisler, J., Glibert, P. M., Burkholder, J. M., et al. (2008). Eutrophication and harmful algal blooms: A scientific consensus. *Harmful Algae*, 8, 3–13. https://doi.org/10.1016/j.hal.2008.08.006"""))
+
+C.append(md("""### 3.1 Load and first look
+**Long format:** one row per measurement. `Characteristic` says what was measured, and `Result_Value` / `Result_Unit` give the reading."""))
+C.append(code("""nut_raw = pd.read_csv(find_file("NutrientsFL_2006_2025"), low_memory=False)
+nut_raw["date"] = pd.to_datetime(nut_raw["Activity_Start_Date"], errors="coerce")
+print(f"{len(nut_raw):,} rows x {nut_raw.shape[1]} columns")
+nut_raw.head(3)"""))
+C.append(md("""**Column overview:**"""))
+C.append(code("""profile_columns(nut_raw)"""))
+
+C.append(md("""### 3.2 Data-quality checks"""))
+C.append(code("""pd.DataFrame([
+    ("Programs", str(nut_raw["DataSource"].value_counts().to_dict())),
+    ("Stations", nut_raw["Actual_StationID"].nunique()),
+    ("Latitude / longitude columns", "none - stations can't be mapped"),
+    ("Date range", f"{nut_raw['date'].min().date()} -> {nut_raw['date'].max().date()}"),
+    ("Dates that fail to parse", int(nut_raw["date"].isna().sum())),
+    ("Distinct characteristics", nut_raw["Characteristic"].nunique()),
+    ("Missing Result_Value", int(nut_raw["Result_Value"].isna().sum())),
+    ("Activity types", str(nut_raw["Activity_Type"].value_counts().to_dict())),
+    ("Depth layers", str(nut_raw["RelativeDepth"].value_counts().to_dict())),
+    ("Qualifier codes (U = not detected)", str(nut_raw["Value_Qualifier"].value_counts().head(6).to_dict())),
+    ("Exact duplicate rows", int(nut_raw.duplicated().sum())),
+], columns=["check", "result"])"""))
+
+C.append(md("""### 3.3 Is each measurement recorded the same way?
+Units and value ranges per characteristic. This table shows spelling variants, mixed units and values far outside the normal range."""))
+C.append(code("""nut_raw.groupby(["Characteristic", "Result_Unit"])["Result_Value"].agg(["size", "median", "min", "max"]).round(3)"""))
+
+C.append(md("""### 3.4 Exploring the data
+How often is the bay sampled, and how do the key variables change over time? The four plotted are the ones the literature emphasises: nitrogen and phosphorus, the nutrients linked to harmful algal blooms [1], and chlorophyll-a, the most consistently significant input for predicting algal blooms across machine-learning methods [2]. Phosphate, one form of phosphorus, is shown alongside the total.
+
+**Sources**
+1. Heisler, J., et al. (2008). Eutrophication and harmful algal blooms: A scientific consensus. *Harmful Algae*, 8, 3–13. https://doi.org/10.1016/j.hal.2008.08.006
+2. Muttil, N., & Chau, K. W. (2007). Machine-learning paradigms for selecting ecologically significant input variables. *Engineering Applications of Artificial Intelligence*, 20(6), 735–744. https://vuir.vu.edu.au/765/"""))
+C.append(code("""plot_per_year(nut_raw["date"].drop_duplicates(), "Distinct sampling times per year (near-continuous sensor data from 2016)")
+plt.show()
+show = {"Nitrogen": "Total nitrogen (mg/L)", "Phosphorus as P": "Total phosphorus (mg/L)",
+        "Phosphorus, phosphate (PO4) as P": "Phosphate (mg/L)", "Chlorophyll a, corrected for pheophytin": "Chlorophyll-a (µg/L)"}
+fig, axes = plt.subplots(2, 2, figsize=(14, 6), sharex=True)
+for ax, (ch, title) in zip(axes.ravel(), show.items()):
+    s = nut_raw[(nut_raw["Characteristic"] == ch) & (nut_raw["DataSource"] == "SARASOTAES_WQ")]
+    m = s.groupby(s["date"].dt.to_period("M"))["Result_Value"].median()
+    ax.plot(m.index.to_timestamp(), m.values, color="tab:purple", lw=1)
+    ax.set_title(f"Bay stations: {title}, monthly median")
+plt.tight_layout(); plt.show()"""))
+C.append(md("""**What the figures show**
+
+* **Sampling times per year (bar chart).** The x-axis is the year and the y-axis is the number of distinct sampling timestamps (date and time). Before 2016 there are about 25–80 a year, roughly monthly sampling. From 2016 there are about 900–2,000 a year, from near-continuous sensors.
+* **Four panels: monthly medians at the bay stations.** The x-axis is time and the y-axis is the measured value. Total nitrogen and chlorophyll-a rise and fall each year. Total phosphorus drops around 2008 and stays lower afterwards. Phosphate has a gap of about two years around 2008."""))
+
+C.append(md("""### 3.5 Findings
+* **21 characteristics in mixed units**, some spelled two ways (`Temperature, water` / `Temperature, Water`; two DO-saturation spellings).
+* **Some readings fall far outside the normal range.** 4,965 water-temperature readings are above 100 °F (median 172.5 °F, maximum 412.9 °F), while the Mote sensor in the bay never reads above 33 °C (91 °F, §7). 250 specific-conductance readings are below 100 µS/cm (one is 0), while the typical reading is about 49,000 µS/cm. Step 4 removes them.
+* **Sampling changes in 2016**, from about monthly grab samples to near-continuous sensors (3.4). A trailing 8-week median in §10 keeps the two periods comparable.
+* **No coordinates.** Stations can only be grouped by program (bay or creek).
+* **Values below the detection limit** are marked `U`, and their recorded value is the detection limit itself.
+* **7,374 exact duplicate rows** (1.4 %)."""))
+
+C.append(md("""### 3.6 Cleaning, step by step"""))
+C.append(code("""name = "NutrientsFL_2006_2025"
+log_step(name, "raw file", nut_raw)"""))
+
+C.append(md("""#### Step 1 — Remove exact duplicate rows
+7,374 rows (1.4 %) are identical in every column: same station, time, characteristic and value. They are re-entries of the same measurement, and left in they would count twice in weekly medians."""))
+C.append(code("""n_dd = nut_raw.drop_duplicates()
+show_step(name, nut_raw, n_dd, "drop exact duplicate rows")
+LOG[-1]["note"] = "identical in every column (re-entries)\""""))
+
+C.append(md("""#### Step 2 — Standardise characteristic names (all kept)
+Each characteristic gets one standard, readable name (e.g. `Phosphorus as P` becomes "total phosphorus"), and spelling variants (e.g. `Temperature, water` / `Temperature, Water`) are merged by lower-casing. All 18 characteristics are kept at this stage.
+
+The most important ones, based on the literature, are **nitrogen and phosphorus** (total N, nitrate + nitrite, total P, phosphate), the nutrients linked to harmful algal blooms [1], and **chlorophyll-a**, the most consistently significant input for predicting algal blooms [2]. Water temperature, conductivity, turbidity and dissolved oxygen describe the conditions around them. The other characteristics (BOD, pH, coliform, TSS, colour, Kjeldahl nitrogen, DO saturation, uncorrected chlorophyll) stay available. Which ones actually help will be tested during modelling, and some will probably be dropped then.
+
+**Sources**
+1. Heisler, J., et al. (2008). Eutrophication and harmful algal blooms: A scientific consensus. *Harmful Algae*, 8, 3–13. https://doi.org/10.1016/j.hal.2008.08.006
+2. Muttil, N., & Chau, K. W. (2007). Machine-learning paradigms for selecting ecologically significant input variables. *Engineering Applications of Artificial Intelligence*, 20(6), 735–744. https://vuir.vu.edu.au/765/"""))
+C.append(code("""NUTRIENT_MAP = {   # file spelling (lower-cased) -> one readable name per characteristic
+    "nitrogen": "total nitrogen", "phosphorus as p": "total phosphorus",
+    "nitrogen, nitrite (no2) + nitrate (no3) as n": "nitrate + nitrite", "phosphorus, phosphate (po4) as p": "phosphate",
+    "nitrogen, ammonia as n": "ammonia", "chlorophyll a, corrected for pheophytin": "chlorophyll-a (corrected)",
+    "temperature, water": "water temperature (°F)", "specific conductance": "specific conductance",
+    "turbidity": "turbidity", "dissolved oxygen (do)": "dissolved oxygen",
+    "bod, biochemical oxygen demand": "biochemical oxygen demand", "chlorophyll a, uncorrected for pheophytin": "chlorophyll-a (uncorrected)",
+    "dissolved oxygen saturation": "dissolved oxygen saturation", "fecal coliform": "fecal coliform",
+    "nitrogen, kjeldahl": "Kjeldahl nitrogen", "ph": "pH", "total suspended solids (tss)": "total suspended solids",
+    "true color": "true colour"}
+LITERATURE_PRIORITY = ["total nitrogen", "nitrate + nitrite", "total phosphorus", "phosphate", "chlorophyll-a (corrected)"]
+n0 = n_dd.assign(var=n_dd["Characteristic"].str.lower().map(NUTRIENT_MAP))
+print("Characteristics without a standard name (should be none):", sorted(n0.loc[n0["var"].isna(), "Characteristic"].unique()))
+n1 = n0.dropna(subset=["date", "var", "Result_Value"])
+show_step(name, n_dd, n1, "all characteristics, names standardised")
+LOG[-1]["note"] = f"{n1['var'].nunique()} characteristics kept; spelling variants merged"
+n1["var"].value_counts().rename("rows").to_frame().assign(literature_priority=lambda d: d.index.isin(LITERATURE_PRIORITY))"""))
+
+C.append(md("""#### Step 3 — Replace "not detected" values with half the detection limit (rows kept)
+A `U` qualifier means the lab detected nothing, and the value recorded is the detection limit. Replacing it with half the detection limit (DL/2) is a common substitution for values below detection [1].
+
+**Source**
+1. Hornung, R. W., & Reed, L. D. (1990). Estimation of average concentration in the presence of nondetectable values. *Applied Occupational and Environmental Hygiene*, 5(1), 46–51. https://doi.org/10.1080/1047322X.1990.10389587"""))
+C.append(code("""n2 = n1.copy()
+nd = n2["Value_Qualifier"].astype(str).str.contains("U")
+print(f"values replaced: {nd.sum():,}")
+n2.loc[nd, "Result_Value"] = n2.loc[nd, "Result_Value"] / 2
+log_step(name, "not-detected values -> half the detection limit", n2, f"{nd.sum():,} values changed, rows kept")"""))
+
+C.append(md("""#### Step 4 — Remove values outside the expected range (gross range test)
+Values outside a minimum–maximum span are removed, following the gross range test for water data [1]. The spans are project choices:
+
+| Measurement | Kept range |
+|---|---|
+| Water temperature | 40–100 °F |
+| Specific conductance | 100–70,000 µS/cm |
+| Dissolved oxygen | 0–25 mg/L |
+| Chlorophyll-a | 0–1,000 µg/L |
+| Total nitrogen | 0–20 mg/L |
+| Total phosphorus | 0–5 mg/L |
+
+**Source**
+1. U.S. Integrated Ocean Observing System (2020). *Manual for Real-Time Quality Control of In-situ Temperature and Salinity Data*, Version 2.1. https://doi.org/10.25923/x02m-m555, Test 4 (Gross Range Test), p. 17."""))
+C.append(code("""VALID = {"water temperature (°F)": (40, 100), "specific conductance": (100, 70000), "dissolved oxygen": (0, 25),
+         "chlorophyll-a (corrected)": (0, 1000), "total nitrogen": (0, 20), "total phosphorus": (0, 5)}
+bad = np.zeros(len(n2), bool)
+for v, (lo, hi) in VALID.items():
+    b = ((n2["var"] == v) & ~n2["Result_Value"].between(lo, hi)).to_numpy()
+    print(f"{v}: {b.sum():,} values outside {lo}-{hi}")
+    bad |= b
+n3 = n2[~bad]
+show_step(name, n2, n3, "values outside the expected range removed")
+LOG[-1]["note"] = "gross range test; " + ", ".join(f"{v} {int(((n2['var'] == v) & ~n2['Result_Value'].between(lo, hi)).sum()):,}" for v, (lo, hi) in VALID.items())"""))
+
+C.append(md("""#### Step 5 — Drop near-bottom readings
+The *K. brevis* label uses surface samples only (§1 Step 4), so readings taken near the bottom are dropped to match."""))
+C.append(code("""n4 = n3[n3["RelativeDepth"] != "Near Bottom"]
+show_step(name, n3, n4, "drop near-bottom readings")
+LOG[-1]["note"] = "surface and mid-depth readings kept, to match the surface-only label\""""))
+
+C.append(md("""#### Step 6 — Label each row bay or creek, keep only what the merge needs
+The file has no coordinates, so the monitoring program is the only location information:
+
+* **Bay** (`SARASOTAES_WQ`, 40 stations): Sarasota County's coastal bay systems [1].
+* **Creek** (`SARASOTA_COASTALCREEK_WQ`, 122 stations): the county's 17 tidally-influenced creeks that connect to those bays [1].
+
+The two are kept as separate features rather than pooled. The table below shows why."""))
+C.append(code("""src = n4["DataSource"].map({"SARASOTAES_WQ": "bay", "SARASOTA_COASTALCREEK_WQ": "creek"})
+display(n4.assign(source=src).pivot_table(index="var", columns="source", values="Result_Value", aggfunc="median")
+          .loc[["specific conductance", "total nitrogen", "total phosphorus"]].round(2).rename_axis("median value"))
+tn = n4[n4["var"] == "total nitrogen"].assign(source=src, week=lambda d: d["date"].dt.to_period(WEEK_RULE))
+by_src = tn.groupby(["week", "source"])["Result_Value"].median().unstack()
+pooled = tn.groupby("week")["Result_Value"].median()
+creek_only, bay_only = by_src["creek"].notna() & by_src["bay"].isna(), by_src["bay"].notna() & by_src["creek"].isna()
+print(f"weeks with total nitrogen: creek only {creek_only.sum()}, bay only {bay_only.sum()}, both {(by_src.notna().all(axis=1)).sum()}")
+print(f"pooled weekly median TN: {pooled[creek_only[creek_only].index].median():.2f} mg/L in creek-only weeks, "
+      f"{pooled[bay_only[bay_only].index].median():.2f} mg/L in bay-only weeks")
+
+fig, axes = plt.subplots(1, 2, figsize=(15, 4), gridspec_kw={"width_ratios": [1, 2.2]})
+med = n4.assign(source=src).pivot_table(index="var", columns="source", values="Result_Value", aggfunc="median").loc[["specific conductance", "total nitrogen", "total phosphorus"]]
+x = np.arange(3)
+axes[0].bar(x - 0.2, med["bay"], 0.4, label="bay", color="tab:blue"); axes[0].bar(x + 0.2, med["creek"], 0.4, label="creek", color="tab:orange")
+axes[0].set_xticks(x, ["conductance (µS/cm)", "total nitrogen (mg/L)", "total phosphorus (mg/L)"], rotation=20, ha="right"); axes[0].set_yscale("log")
+axes[0].set_title("Median value by program (log scale)"); axes[0].legend(frameon=False)
+who = pd.Series("both", index=by_src.index); who[creek_only] = "creek only"; who[bay_only] = "bay only"
+for lab_, col in [("creek only", "tab:orange"), ("bay only", "tab:blue"), ("both", "0.5")]:
+    w = who[who == lab_].index
+    axes[1].scatter(w.to_timestamp(), pooled[w], s=8, color=col, label=f"{lab_} ({len(w)} weeks)")
+axes[1].set_yscale("log"); axes[1].set_ylabel("mg/L"); axes[1].legend(frameon=False, fontsize=8)
+axes[1].set_title("If pooled: weekly median total nitrogen, coloured by which program sampled that week")
+plt.tight_layout(); plt.show()"""))
+C.append(md("""**What the figures show.** Left: median conductance, total nitrogen and total phosphorus for each program; the y-axis is log scale because conductance is in the tens of thousands. Right: what a single pooled weekly nitrogen value would look like. The x-axis is time and the y-axis is the pooled weekly median (mg/L, log scale); each dot is a week, coloured by which program sampled it. Orange (creek-only) weeks sit around 1 mg/L and blue (bay-only) weeks around 0.4, so the pooled series jumps with the sampling, not the water.
+
+* **The water differs.** Median conductance is about 51,000 µS/cm at the bay stations and 820 at the creek stations, and creek total nitrogen and phosphorus are about three times the bay's.
+* **They are mostly sampled in different weeks.** Only 149 weeks have total nitrogen from both programs; 511 have creek only and 188 bay only. A pooled weekly median would read about 1.17 mg/L in creek-only weeks and 0.39 mg/L in bay-only weeks. It would jump with whichever program sampled that week, not with any change in the water.
+* **Medina et al. also treat land inputs as their own features:** river discharge at two USGS gages and nitrate + nitrite measured at the S-79 structure on the Caloosahatchee River, separate from their coastal measurements (water temperature at the Venice and Fort Myers buoys, sea level at Fort Myers). Peace River discharge and the Caloosahatchee nitrate + nitrite were among the features that ranked relatively highly [2].
+
+So bay values become features for conditions at the coast, and creek values become features for the nutrients coming from land.
+
+**Sources**
+1. Sarasota County Water Atlas, *Data & Analysis*: "Sarasota County's 8 major bay systems"; "Sarasota County has 17 tidally-influenced creeks that connect to its coastal bay systems." https://sarasota.wateratlas.usf.edu/analysis
+2. Medina, M., Julian, P., Chin, N., & Davis, S. E. (2024). An early-warning forecast model for red tide (*Karenia brevis*) blooms on the southwest coast of Florida. *Harmful Algae*, 139, 102729, §2.2, Fig. 1 and §3. https://doi.org/10.1016/j.hal.2024.102729"""))
+C.append(code("""nut = (n4.assign(source=n4["DataSource"].map({"SARASOTAES_WQ": "bay", "SARASOTA_COASTALCREEK_WQ": "creek"}))
+          [["date", "source", "var", "Result_Value"]].rename(columns={"Result_Value": "value"}))
+log_step(name, "labelled bay or creek; date, source, variable, value kept", nut,
+         f"bay {(nut['source'] == 'bay').sum():,} rows, creek {(nut['source'] == 'creek').sum():,} rows")
+nut.groupby(["source", "var"])["value"].describe()[["count", "50%", "min", "max"]].round(3)"""))
+
+C.append(md("""#### Deliberately *not* done
+* **Did not average stations here.** The weekly median across stations is taken in §10."""))
+
+C.append(md("""### 3.7 Cleaning summary"""))
+C.append(code("""display(summarise_cleaning(name))
+del nut_raw, n_dd, n0, n1, n2, n3, n4"""))
+
 
 nb["cells"] = C
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}
