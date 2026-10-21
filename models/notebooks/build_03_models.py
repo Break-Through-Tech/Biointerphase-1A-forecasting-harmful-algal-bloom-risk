@@ -402,6 +402,268 @@ C.append(md("""**What the figures show.** Top: Hybrid LR on bloom history, 1 wee
 * **2 weeks: the same tie** (Hybrid LR 0.66 vs persistence 0.65), with warning recall 0.80 → 0.86 and 29 % of escalations caught.
 * **4 weeks: the hybrids trade precision for early warning.** Hybrid LR on `full` flags 9 of 11 onsets and Hybrid XGB on `long` 8 of 11 (persistence: 5), catching 54 % and 49 % of escalations, but warning precision drops to 0.58–0.60 (about 4 in 10 warnings are false alarms). Macro-F1 is lower (0.55–0.57 vs 0.60)."""))
 
+# ---------------------------------------------------------------- 8. comparison
+C.append(md("""---
+## 8. Comparison
+
+**Best version of each model** (the feature set with the highest macro-F1) at each horizon:"""))
+C.append(code("""best = results.loc[results.groupby(["horizon", "model"])["macro_f1"].idxmax()]
+best = best.set_index(["horizon", "model"])[["feature_set"] + list(METRICS)].rename(columns=METRICS)
+best.sort_values(["horizon", "macro-F1"], ascending=[True, False]).round(2)"""))
+C.append(code("""fig, axes = plt.subplots(1, 3, figsize=(16, 4), sharey=True)
+for ax, h in zip(axes, ["h1w", "h2w", "h4w"]):
+    d = results[results["horizon"] == h]
+    for m, g in d.groupby("model"):
+        ax.scatter(g["warning_recall"], g["macro_f1"], s=40, label=m)
+    ax.set_title(f"{h[1]} week(s) ahead"); ax.set_xlabel("warning recall")
+axes[0].set_ylabel("macro-F1"); axes[-1].legend(frameon=False, fontsize=8, bbox_to_anchor=(1, 1))
+plt.tight_layout(); plt.show()"""))
+C.append(md("""**What the figure shows.** Each dot is one model and feature set. The y-axis is macro-F1 (overall accuracy across the three classes) and the x-axis is warning recall (how many real warnings are flagged). Up and to the right is better. Persistence sits high on macro-F1; the hybrids reach further right (more warnings) at a similar or slightly lower macro-F1."""))
+C.append(md("""**Score per test year, 1 week ahead** (each model on `kb_only`):"""))
+C.append(code("""yearly = pd.DataFrame({m: by_year(m, "kb_only").loc["macro-F1"] for m in
+                       ["persistence", "seasonal_climatology", "logistic_regression", "random_forest", "xgboost", "hybrid_lr", "hybrid_xgb"]})
+ax = yearly.plot(marker="o", figsize=(12, 3.8)); ax.set_ylabel("macro-F1"); ax.set_title("Macro-F1 per test year, 1 week ahead")
+ax.legend(frameon=False, fontsize=8, bbox_to_anchor=(1, 1)); plt.xticks(range(len(yearly)), yearly.index, rotation=30, ha="right"); plt.show()
+yearly.round(2).T"""))
+C.append(md("""**Result.** Scores swing a lot from year to year: persistence ranges from macro-F1 0.27 to 0.78. Two things to keep in mind when reading the table:
+
+* **Quiet years.** In Aug 2023 – Jul 2024 and Aug 2025 – Jul 2026 every test week was no bloom. Persistence gets accuracy 1.00 there but macro-F1 0.33, because the two classes that never occur score 0. This is why macro-F1, not accuracy, is the main score.
+* **Small years.** Aug 2021 – Jul 2022 (4 weeks) and Aug 2022 – Jul 2023 (11 weeks) have very few test weeks, so one week changes the score a lot.
+
+The hybrids track persistence closely in most years; the clearest gain is Hybrid LR in Aug 2015 – Jul 2016 (0.81 vs 0.78)."""))
+C.append(md("""**Is the difference from persistence real?** A block bootstrap resamples whole bloom years 2,000 times and records how often each model beats persistence (`experiments/bootstrap_vs_persistence.py`)."""))
+C.append(code("""boot = pd.concat({h: pd.read_csv(R / h / "experiments" / "bootstrap_vs_persistence.csv").head(3)
+                  for h in ["h1w", "h2w", "h4w"] if (R / h / "experiments" / "bootstrap_vs_persistence.csv").exists()})
+boot.round(3)"""))
+C.append(md("""**Result.** No model beats persistence on macro-F1 in a way the bootstrap can confirm. The best difference at each horizon is close to zero with an interval that includes zero: Hybrid LR −0.002 (−0.016 to +0.010) at 1 week, +0.005 (−0.035 to +0.049) at 2 weeks and −0.022 (−0.071 to +0.010) at 4 weeks. The hybrids do raise warning recall over persistence in 97–100 % of resamples at every horizon."""))
+
+# ---------------------------------------------------------------- 9. summary
+C.append(md("""### Final comparison table
+Every model on every feature set it was trained on, at each horizon (persistence and seasonal climatology use no features, so they appear once). **Warning F1** combines warning precision and recall: 2 × P × R / (P + R). `wind_short` is not a separate set: it is included in `full`."""))
+C.append(code("""NAMES_M = {"persistence": "Persistence", "seasonal_climatology": "Seasonal climatology", "logistic_regression": "Logistic regression",
+           "random_forest": "Random forest", "xgboost": "XGBoost", "hybrid_lr": "Hybrid LR", "hybrid_xgb": "Hybrid XGB"}
+HZ = {"h1w": "1 week", "h2w": "2 weeks", "h4w": "4 weeks"}
+b = results.copy()
+b["warning_f1"] = 2 * b["warning_precision"] * b["warning_recall"] / (b["warning_precision"] + b["warning_recall"])
+b.loc[b["model"].isin(["persistence", "seasonal_climatology"]), "feature_set"] = "-"
+b["horizon"], b["model"] = b["horizon"].map(HZ), b["model"].map(NAMES_M)
+final = (b.set_index(["horizon", "model", "feature_set"])
+          [["accuracy", "macro_f1", "warning_precision", "warning_recall", "warning_f1",
+            "recall_at_risk", "recall_bloom", "onsets_caught_any_warning", "escalation_recall"]]
+          .rename(columns={"macro_f1": "macro-F1", "warning_precision": "warning precision", "warning_recall": "warning recall",
+                           "warning_f1": "warning F1", "recall_at_risk": "at-risk recall", "recall_bloom": "bloom recall",
+                           "onsets_caught_any_warning": "onsets flagged (of 11)", "escalation_recall": "escalations caught"})
+          .rename_axis(["horizon", "model", "feature set"])
+          .sort_values(["horizon", "macro-F1"], ascending=[True, False]))
+final.round(3).to_csv(R / "model_comparison_all.csv")       # saved: every model, feature set and horizon
+print("saved to", R / "model_comparison_all.csv")
+final.style.format(precision=2).background_gradient(subset=["accuracy", "macro-F1", "warning F1"], cmap="Greens")"""))
+C.append(md("""**Top 3 models per horizon by accuracy** (share of weeks correct):"""))
+C.append(code("""top_acc = final.reset_index().sort_values("accuracy", ascending=False).groupby("horizon").head(3)
+top_acc = top_acc.sort_values(["horizon", "accuracy"], ascending=[True, False]).set_index(["horizon", "model", "feature set"])
+top_acc.style.format(precision=2).background_gradient(subset=["accuracy"], cmap="Greens")"""))
+C.append(md("""**Top 3 models per horizon by macro-F1** (the main score, weighting the three classes equally):"""))
+C.append(code("""top_f1 = final.reset_index().sort_values("macro-F1", ascending=False).groupby("horizon").head(3)
+top_f1 = top_f1.sort_values(["horizon", "macro-F1"], ascending=[True, False]).set_index(["horizon", "model", "feature set"])
+top_f1.style.format(precision=2).background_gradient(subset=["macro-F1"], cmap="Greens")"""))
+C.append(md("""**Result.** The two rankings disagree. By accuracy, random forest and XGBoost rank near the top (0.72–0.82): they get the common no-bloom weeks right, but their at-risk recall is close to zero (0.00–0.22) and at 2 and 4 weeks they flag only 1–7 of 11 bloom onsets. By macro-F1, persistence and the hybrids lead at every horizon. A high accuracy here mostly means "good at quiet weeks", which is why macro-F1 is the main score."""))
+C.append(md("""**Macro-F1 by model and feature set** (one grid per horizon; blank = that model was not trained on that set):"""))
+C.append(code("""grid = b.pivot_table(index=["horizon", "model"], columns="feature_set", values="macro_f1")
+grid = grid.reindex(columns=["-", "kb_only", "env_only", "long", "full"])
+grid.style.format(precision=2, na_rep="").background_gradient(cmap="Greens", axis=None)"""))
+
+C.append(md("""---
+## 9. Summary"""))
+
+C.append(md("""### 9.1 What the scores mean in weeks
+Each score below is turned back into counts of test weeks, for persistence and the best version of every learned model at each horizon. How to read the columns:
+
+* **weeks correct** (accuracy): weeks where the forecast class was exactly right.
+* **warnings issued**: weeks where the model forecast at risk or bloom.
+* **right warnings / false alarms**: of those, how many really were at risk or bloom, and how many stayed no bloom. **Warning precision** = right warnings ÷ warnings issued.
+* **real warning weeks / missed**: weeks that really were at risk or bloom, and how many of them got no warning. **Warning recall** = (real − missed) ÷ real.
+* **onsets flagged**: of the 11 bloom starts (a bloom after at least 4 quiet weeks), how many had a warning forecast for them.
+* **escalations caught**: weeks that turned from quiet to at risk or bloom, and how many the model warned about."""))
+C.append(code("""from common.metrics import find_bloom_onsets
+
+
+def counts(model, feature_set, horizon):
+    \"\"\"Turn one model's test predictions into week counts.
+
+    Args:
+        model (str): Model folder name in results/.
+        feature_set (str): Feature set, e.g. "kb_only".
+        horizon (str): "h1w", "h2w" or "h4w".
+
+    Returns:
+        dict: Week counts and the scores built from them.
+    \"\"\"
+    p = pd.read_csv(R / horizon / model / f"predictions__{feature_set}__forward.csv", index_col=0, parse_dates=True)
+    t, f = p["y_true"], p["y_pred"]
+    warn, real = f >= 1, t >= 1
+    onsets = find_bloom_onsets(t)
+    quiet = p["last_class"] == 0
+    esc = quiet & real
+    return {"test weeks": len(p), "weeks correct": int((t == f).sum()), "accuracy": (t == f).mean(),
+            "warnings issued": int(warn.sum()), "right warnings": int((warn & real).sum()),
+            "false alarms": int((warn & ~real).sum()), "warning precision": (warn & real).sum() / max(warn.sum(), 1),
+            "real warning weeks": int(real.sum()), "missed": int((real & ~warn).sum()),
+            "warning recall": (warn & real).sum() / max(real.sum(), 1),
+            "onsets flagged": f"{int((f[onsets] >= 1).sum())} of {len(onsets)}",
+            "escalations caught": f"{int((esc & warn).sum())} of {int(esc.sum())}"}
+
+
+best_fs = results.loc[results.groupby(["horizon", "model"])["macro_f1"].idxmax()].set_index(["horizon", "model"])["feature_set"]
+rows = {}
+for (h, m), fs in best_fs.items():
+    if m == "seasonal_climatology":
+        continue
+    rows[(HZ[h], NAMES_M[m], fs if m != "persistence" else "-")] = counts(m, fs, h)
+# Hybrid LR on `full` at 4 weeks is the most sensitive 4-week alarm, so it is shown too
+rows[("4 weeks", "Hybrid LR", "full")] = counts("hybrid_lr", "full", "h4w")
+week_counts = pd.DataFrame(rows).T.rename_axis(["horizon", "model", "feature set"]).sort_index(level=[0, 1])
+week_counts.style.format({c: "{:.2f}" for c in ["accuracy", "warning precision", "warning recall"]})"""))
+C.append(md("""### 9.2 Did each bloom start get a warning?
+For the 11 bloom onsets in the test years: what persistence and the two hybrids forecast for that week (0 = no bloom, 1 = at risk, 2 = bloom). Any value of 1 or 2 counts as flagged."""))
+C.append(code("""def onset_forecasts(horizon, picks):
+    \"\"\"Forecast class at every bloom onset, for several models.
+
+    Args:
+        horizon (str): "h1w", "h2w" or "h4w".
+        picks (dict): Column name -> (model, feature set).
+
+    Returns:
+        pandas.DataFrame: One row per onset (the week being forecast), one column per model.
+    \"\"\"
+    h = int(horizon[1])
+    out = {}
+    for name, (m, fs) in picks.items():
+        p = pd.read_csv(R / horizon / m / f"predictions__{fs}__forward.csv", index_col=0, parse_dates=True)
+        o = find_bloom_onsets(p["y_true"])
+        out[name] = pd.Series(p.loc[o, "y_pred"].to_numpy(), index=(pd.DatetimeIndex(o) + pd.Timedelta(weeks=h)).date)
+    return pd.DataFrame(out).rename_axis("bloom onset (week)")
+
+for h, picks in {"h1w": {"Persistence": ("persistence", "kb_only"), "Hybrid LR": ("hybrid_lr", "kb_only"), "Hybrid XGB": ("hybrid_xgb", "kb_only")},
+                 "h4w": {"Persistence": ("persistence", "kb_only"), "Hybrid LR (full)": ("hybrid_lr", "full"), "Hybrid XGB (long)": ("hybrid_xgb", "long")}}.items():
+    t = onset_forecasts(h, picks)
+    print(f"{HZ[h]} ahead - flagged: " + ", ".join(f"{c} {int((t[c] >= 1).sum())}/{len(t)}" for c in t))
+    display(t.style.map(lambda v: "background-color: #c7e9c0" if v >= 1 else "background-color: #fcbba1"))"""))
+C.append(md("""### 9.3 What the results mean
+
+**1 week ahead (448 test weeks, 168 of them really at risk or bloom).**
+* **Persistence** is right in 373 weeks (83 %). It issues 168 warnings, 142 of them right and 26 false alarms (precision 0.85), and misses 26 real warning weeks. It flags 7 of 11 bloom onsets and catches none of the 26 escalations, because it can only repeat last week.
+* **Hybrid LR** (`kb_only`) is right in 364 weeks (81 %). It issues 186 warnings, 147 right and 39 false alarms (precision 0.79), and misses only 21. It flags 8 of 11 onsets and catches 5 of the 26 escalations. In short: about 13 more false alarms in exchange for 5 escalations and one more onset caught.
+* **Hybrid XGB** is very close (361 right, 41 false alarms, 7 of 11 onsets, 3 escalations).
+* **Random forest and XGBoost** are as accurate (355–366 right) but miss 33–34 real warning weeks and catch only 2–4 escalations.
+* **Logistic regression** flags the most onsets (9 of 11) and escalations (8 of 26) but is right in fewer weeks (345).
+
+**2 weeks ahead (447 test weeks).**
+* **Persistence** is right in 353 weeks (79 %), misses 34 real warning weeks and flags 5 of 11 onsets.
+* **Hybrid LR** (`kb_only`) is right in 342 weeks (77 %). It issues 195 warnings (144 right, 51 false alarms), misses only 24, flags 8 of 11 onsets and catches 10 of 34 escalations. Its macro-F1 is slightly above persistence (0.66 vs 0.65), within noise.
+* **Random forest** (`full`) is right in the most weeks (359) but misses 44 real warning weeks and flags only 4 of 11 onsets.
+
+**4 weeks ahead (445 test weeks).**
+* **Persistence** is right in 331 weeks (74 %). It issues 166 warnings (125 right, 41 false alarms), misses 43 real warning weeks, flags 5 of 11 onsets and catches no escalations.
+* **Hybrid LR** (`full`) is right in fewer weeks (282, 63 %) because it warns much more: 254 warnings, 148 right and 106 false alarms (precision 0.58). In return it misses only 20 real warning weeks, flags 9 of 11 onsets and catches 23 of 43 escalations.
+* **Hybrid XGB** (`long`) is similar: 98 false alarms, 22 missed, 8 of 11 onsets, 21 of 43 escalations.
+* **Random forest** (`full`) is right in the most weeks (340) but misses 69 real warning weeks and flags only 1 of 11 onsets.
+
+**Overall.** At 1 and 2 weeks the hybrids give a small, consistent gain in early warning at little cost. At 4 weeks the choice is a trade-off: persistence gives fewer false alarms, the hybrids catch most bloom starts a month ahead at the cost of about 4 false alarms in every 10 warnings. Which is better depends on what a warning triggers (e.g. extra sampling vs a public advisory), a decision for the project team."""))
+C.append(md("""### 9.4 How these scores compare with published models
+Each study defines its target and tests its models differently, so the comparison matches each one on its own terms as closely as possible.
+
+| Study | Target | Test design | Published score |
+|---|---|---|---|
+| Medina et al. 2024 [1] | weekly max *K. brevis* class in 3 groups, 1 and 4 weeks ahead (4-week target = highest class over the next 4 weeks) | cross-validation, one water year per fold | accuracy 0.730 (1 wk), 0.844 (4 wk); kappa 0.509 / 0.702; bloom onsets forecast as bloom on time or earlier: 8 of 10 (1 wk), 5 of 10 (4 wk) |
+| Li et al. 2021 [2] | bloom (weekly mean of the 5 highest counts ≥ 10⁵) vs no bloom, from wind, river flow and nutrients only | block CV: train 1998–2016, test 2017–2018 | bloom F1 0.29–0.45, accuracy 0.47–0.62 |
+| Izadi et al. 2021 [3] | bloom (> 10⁴ cells/L) vs no bloom, 8 days ahead, from satellite data | random 70/30 split of samples | balanced accuracy 0.96, AUC 0.98 |
+
+Our scores in the same terms (leave-one-year-out is the closest match to Medina's water-year folds; `env_only` is the closest match to Li's inputs, which had no bloom history):"""))
+C.append(code("""r = pd.concat([pd.read_csv(f).assign(horizon=f.parent.parent.name) for f in sorted(R.glob("h*w/*/metrics.csv"))], ignore_index=True)
+r["bloom F1"] = 2 * r["precision_bloom"] * r["recall_bloom"] / (r["precision_bloom"] + r["recall_bloom"])
+pick = [("h1w", "persistence", "kb_only"), ("h1w", "hybrid_lr", "kb_only"), ("h1w", "random_forest", "env_only"),
+        ("h4w", "persistence", "kb_only"), ("h4w", "hybrid_lr", "full"), ("h4w", "random_forest", "env_only")]
+ours = (r.set_index(["horizon", "model", "feature_set"]).loc[pick].reset_index()
+         [["horizon", "model", "feature_set", "scheme", "accuracy", "kappa", "bloom F1", "onsets_caught_bloom",
+           "onsets_caught_any_warning", "n_onsets"]]
+         .rename(columns={"onsets_caught_bloom": "onsets forecast as bloom", "onsets_caught_any_warning": "onsets with any warning",
+                          "n_onsets": "onsets"}))
+ours.set_index(["horizon", "model", "feature_set", "scheme"]).round(2)"""))
+C.append(md("""**Bloom onsets scored the way Medina et al. score them.** Their onset is the first Medium/High (bloom) week after a non-bloom period, and a forecast counts as correct if *bloom* was forecast for that week "on time or in advance" [1]. The paper does not fix how far in advance; here it is up to 4 weeks before the onset, but only within the quiet stretch before it (a bloom forecast made while the previous bloom was still going does not count). Our own rule (§1) is shown alongside: an onset needs at least 4 quiet weeks before it, and any warning (at risk or bloom) for the onset week counts."""))
+C.append(code("""def medina_onsets(p, h, ahead=4):
+    \"\"\"Score bloom onsets with Medina et al.'s rule.
+
+    Onset: a bloom week whose previous labelled week was not bloom. Hit: a bloom
+    forecast for the onset week, or for any of the `ahead` weeks before it that
+    fall after the previous bloom ended.
+
+    Args:
+        p (pandas.DataFrame): Saved predictions (index = feature week).
+        h (int): Weeks ahead, used to place each forecast at the week it is for.
+        ahead (int): How many weeks before the onset a bloom forecast still counts.
+
+    Returns:
+        tuple: (onsets hit, number of onsets).
+    \"\"\"
+    s = pd.DataFrame({"true": p["y_true"].to_numpy(), "pred": p["y_pred"].to_numpy()},
+                     index=p.index + pd.Timedelta(weeks=h)).sort_index()
+    onsets = s.index[(s["true"] == 2) & (s["true"].shift(1) != 2) & s["true"].shift(1).notna()]
+    hits = 0
+    for t in onsets:
+        # "in advance" only within the quiet stretch before the onset, never back into the previous bloom
+        prev_bloom = s.index[(s.index < t) & (s["true"] == 2)]
+        start = t - pd.Timedelta(weeks=ahead)
+        if len(prev_bloom):
+            start = max(start, prev_bloom.max() + pd.Timedelta(days=1))
+        hits += bool((s.loc[start:t, "pred"] == 2).any())
+    return hits, len(onsets)
+
+
+rows = []
+for h in ["h1w", "h2w", "h4w"]:
+    for m, fs in best_fs.xs(h, level="horizon").items():
+        if m == "seasonal_climatology":
+            continue
+        p = pd.read_csv(R / h / m / f"predictions__{fs}__forward.csv", index_col=0, parse_dates=True)
+        hit, n = medina_onsets(p, int(h[1]))
+        c = counts(m, fs, h)
+        rows.append({"horizon": HZ[h], "model": NAMES_M[m], "feature set": fs,
+                     "Medina rule: bloom forecast on time or up to 4 wk early": f"{hit} of {n}",
+                     "our rule: any warning for the onset week": c["onsets flagged"]})
+pd.DataFrame(rows).set_index(["horizon", "model", "feature set"])"""))
+C.append(md("""**Result.**
+* **Accuracy against Medina et al.** In the comparable leave-one-year-out test, our 1-week accuracy (0.85–0.87) and kappa (0.68–0.71) are higher than theirs (0.73 and 0.51). At 4 weeks theirs are higher (0.84 and 0.70 against our 0.75–0.80 and 0.50–0.54), but their 4-week target is the highest class over the next 4 weeks, which is easier to hit than ours (the class in week 4).
+* **Bloom onsets.** Under Medina's rule, our models catch 7–11 of 17 onsets, against their 8 of 10. That rule is lenient on gappy data: even persistence scores 8 of 17, because after unsampled weeks its last observed class can still be bloom. Forecasting *bloom* exactly at the onset week is where ours are clearly weaker (1–3 of 11 vs their 8 of 10); our models usually warn *at risk* first, which our own rule counts (8–9 of 11). Medina's features include river discharge, river nitrogen and the Loop Current, which the project data does not have.
+* **Li et al.** Without bloom history (`env_only`), our bloom F1 (0.43–0.47) is in the same range as theirs (0.29–0.45). With bloom history it is much higher (0.84 at 1 week, about 0.70 at 4 weeks).
+* **Izadi et al.** are not comparable: a random split puts the same blooms in training and test data, which inflates scores.
+
+Overall our results are in the same range as published *K. brevis* forecasts. The clear gap is forecasting the *bloom* class itself at onsets.
+
+**Sources**
+1. Medina, M., Julian, P., Chin, N., & Davis, S. E. (2024). An early-warning forecast model for red tide (*Karenia brevis*) blooms on the southwest coast of Florida. *Harmful Algae*, 139, 102729, Table 2 and §3. https://doi.org/10.1016/j.hal.2024.102729
+2. Li, M. F., Glibert, P. M., & Lyubchich, V. (2021). Machine learning classification algorithms for predicting *Karenia brevis* blooms on the West Florida Shelf. *Journal of Marine Science and Engineering*, 9(9), 999, Table 1. https://doi.org/10.3390/jmse9090999
+3. Izadi, M., Sultan, M., El Kadiri, R., et al. (2021). A remote sensing and machine learning-based approach to forecast the onset of harmful algal bloom. *Remote Sensing*, 13(19), 3863. https://doi.org/10.3390/rs13193863"""))
+C.append(md("""### 9.5 Overview by horizon
+
+| Horizon | Best macro-F1 | Best learned model | Accuracy | What it adds over persistence |
+|---|---|---|---|---|
+| 1 week | Persistence 0.71 | Hybrid LR (`kb_only`) 0.71 | Persistence 0.83; Hybrid LR (`kb_only`) 0.81 | more warnings (recall 0.85 → 0.88), 19 % of escalations caught |
+| 2 weeks | Hybrid LR 0.66 / Persistence 0.65 (a tie) | Hybrid LR (`kb_only`) 0.66 | Persistence 0.79; Hybrid LR (`kb_only`) 0.77 | more warnings (recall 0.80 → 0.86), 29 % of escalations caught |
+| 4 weeks | Persistence 0.60 | Hybrid LR (`kb_only`) 0.58; Hybrid LR (`full`) 0.57 | Persistence 0.74; Hybrid LR (`kb_only`) 0.69; Hybrid LR (`full`) 0.63 | Hybrid LR (`full`) flags 9 of 11 onsets (persistence 5), at warning precision 0.58 |
+
+Accuracy is the share of test weeks forecast in the correct class. Most weeks are no bloom, so accuracy rewards forecasting the common class; macro-F1 weights the three classes equally.
+
+* **Persistence is the bar.** No model beats it on macro-F1 by more than noise.
+* **The hybrids are the strongest learned models at every horizon:** they match persistence on macro-F1 and add early warnings, which the project brief values ("ability to correctly identify at-risk conditions").
+* **Bloom history carries most of the signal;** the environment helps mainly with 4-week early warnings."""))
+C.append(md("""### 9.6 How the models for the next step were picked
+
+1. **Macro-F1 first**, because it weights the rare at-risk and bloom classes equally (§1).
+2. **Persistence is the reference, not a candidate:** it uses no features, so there is nothing to select.
+3. **Ties go to the model with more early warnings** (warning recall, onsets flagged, escalations caught), since the project brief values the "ability to correctly identify at-risk conditions".
+4. **Picked: Hybrid LR and Hybrid XGB.** Hybrid LR is the best learned model at every horizon; Hybrid XGB is next at 1 week and among the strongest early-warning models at 2 and 4 weeks.
+
+**Next step:** feature selection on these two hybrids at 1, 2 and 4 weeks: which features matter, and does removing weak ones and retraining help?"""))
 
 nb["cells"] = C
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}
