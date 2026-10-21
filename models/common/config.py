@@ -37,3 +37,14 @@ REGIONAL_BOX = dict(lat=(26.3, 28.0), lon=(-83.5, -81.8))
 #   bloom    : 100,000 or more   (FWC: medium, high; bloom threshold of Li et al. 2021)
 CLASS_EDGES = [0, 1e4, 1e5]
 CLASS_NAMES = ["no_bloom", "at_risk", "bloom"]
+
+# --- Forecast design ------------------------------------------------------
+# Weeks end on Sunday.
+WEEK_RULE = "W-SUN"
+# First week of the study. The datasets start at different times:
+#   HABSOS cell counts 1953, water quality 1998, satellite chlorophyll 2010,
+#   Bradenton weather 2015, gridded wind 2019, Mote water temperature 2020,
+#   Sarasota airport wind 2022.
+# We start in 2010 so the bloom, water-quality and chlorophyll records all overlap.
+# Weeks before a later dataset starts are left blank for its features.
+STUDY_START = "2010-01-01"
