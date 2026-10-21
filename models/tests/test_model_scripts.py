@@ -25,7 +25,7 @@ def small_data(n=160):
     return X, y
 
 
-SINGLE_MODELS = ["persistence", "seasonal_climatology", "logistic_regression", "random_forest"]
+SINGLE_MODELS = ["persistence", "seasonal_climatology", "logistic_regression", "random_forest", "xgboost"]
 
 
 @pytest.mark.parametrize("folder", SINGLE_MODELS)

@@ -357,6 +357,26 @@ C.append(md("""**Findings**
 * **Almost never predicts at risk:** at-risk recall 0.00–0.22, and it catches almost no escalations (0–8 %). Its forecasts mostly follow the last class.
 * **Falls off at 4 weeks:** macro-F1 0.51–0.52 and only 1–2 of 11 onsets flagged."""))
 
+# ---------------------------------------------------------------- 6. XGB
+C.append(md("""---
+## 6. XGBoost
+
+**What it is.** Gradient-boosted trees: small trees added one at a time, each correcting the errors of the ones before. Gradient boosting is a recommended method in the project brief [1]; Izadi et al. found XGBoost outperformed random forest and SVM for forecasting Florida HAB onset from satellite data [2].
+
+**Set-up** (`xgboost/train.py`): 300 shallow trees (depth 3), learning rate 0.05, 80 % of weeks and features per tree, balanced sample weights. Kept small and slow because of the small data.
+
+**Sources**
+1. """ + BRIEF + """
+2. """ + IZADI))
+C.append(code("""model_table("xgboost")"""))
+C.append(code("""timeline("xgboost", "kb_only")
+show("xgboost", "kb_only", kind="confusion")"""))
+C.append(md("""**Score per test year** (1 week ahead, `kb_only`):"""))
+C.append(code("""by_year("xgboost", "kb_only")"""))
+C.append(md("""**Findings**
+* **Similar to random forest:** macro-F1 0.64 at 1 week on `kb_only`, 0.51–0.53 at 4 weeks.
+* **Strong risk ranking** (bloom PR-AUC 0.90 at 1 week), but at-risk recall is low (0.04–0.22) and, with bloom history included, few escalations are caught (8–21 %)."""))
+
 
 nb["cells"] = C
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}
