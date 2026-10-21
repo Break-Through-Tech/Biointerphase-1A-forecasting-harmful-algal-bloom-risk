@@ -1,1 +1,18 @@
+# Python and Jupyter
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
 
+# Office lock files and Node packages
+~$*
+node_modules/
+
+# Regenerable data products (rebuilt from data/ by the notebooks and scripts)
+data/processed/
+models/data/
+models/notebooks/outputs/*
+!models/notebooks/outputs/cleaned/
+models/notebooks/outputs/cleaned/*
+!models/notebooks/outputs/cleaned/merged_weekly_sarasota.csv
+!models/notebooks/outputs/cleaned/cleaning_log.csv
+!models/notebooks/outputs/cleaned/README.md
