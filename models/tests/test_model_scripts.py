@@ -25,7 +25,7 @@ def small_data(n=160):
     return X, y
 
 
-SINGLE_MODELS = ["persistence", "seasonal_climatology"]
+SINGLE_MODELS = ["persistence", "seasonal_climatology", "logistic_regression"]
 
 
 @pytest.mark.parametrize("folder", SINGLE_MODELS)
@@ -34,3 +34,8 @@ def test_make_model_fits_and_predicts_three_classes(folder):
     model = load(folder).make_model().fit(X, y)
     pred = model.predict(X)
     assert len(pred) == len(X) and set(pred) <= {0, 1, 2}
+
+
+def test_logistic_regression_is_balanced_and_penalised():
+    lr = load("logistic_regression").make_model()[-1]
+    assert lr.class_weight == "balanced" and lr.C == 0.1

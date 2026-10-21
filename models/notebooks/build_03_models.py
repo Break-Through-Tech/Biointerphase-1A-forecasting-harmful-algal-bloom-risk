@@ -308,6 +308,33 @@ C.append(md("""**Findings**
 * **Many false alarms:** it warns in most autumn weeks, so warning recall is high (0.82) but warning precision is low (0.42).
 * Season alone is not enough; it is used as a feature in the other models instead."""))
 
+# ---------------------------------------------------------------- 4. LR
+C.append(md("""---
+## 4. Logistic regression
+
+**What it is.** A multinomial logistic regression: each class's log-odds is a weighted sum of the features. The weights can be read directly, which suits the project's aim of interpretable drivers [1].
+
+**Set-up** (`logistic_regression/train.py`)
+* Missing values filled with the training median, plus a "was missing" indicator for each feature.
+* Features standardised. Both steps are fitted inside each training fold only, so test years never influence them.
+* Strong L2 penalty (C = 0.1), because there are about 740 labelled weeks and up to 60 correlated features.
+* Class weights balanced, so at-risk and bloom weeks count as much as no-bloom weeks.
+
+**Source**
+1. """ + BRIEF))
+C.append(code("""model_table("logistic_regression")"""))
+C.append(code("""timeline("logistic_regression", "kb_only")
+show("logistic_regression", "kb_only", kind="confusion")"""))
+C.append(md("""**Score per test year** (1 week ahead, `kb_only`):"""))
+C.append(code("""by_year("logistic_regression", "kb_only")"""))
+C.append(md("""**What the figures show.** Timeline: read as in §2 (red = missed warning, orange = false alarm, purple = wrong level). Confusion matrix: for each true class (rows), how the weeks were predicted (columns).
+
+**Findings**
+* **Best on bloom history alone (`kb_only`):** macro-F1 0.65 at 1 week, 0.61 at 2 weeks, 0.57 at 4 weeks. Below persistence at every horizon.
+* **Environment alone is weak** (`env_only` macro-F1 0.27–0.32).
+* **Adding the environment lowers macro-F1 at 1 week** (0.65 → 0.58 for `long`) but raises escalations caught at 4 weeks (0.19 → 0.51–0.63).
+* **Good risk ranking:** bloom PR-AUC 0.89 at 1 week, against 0.77 for persistence."""))
+
 
 nb["cells"] = C
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}
