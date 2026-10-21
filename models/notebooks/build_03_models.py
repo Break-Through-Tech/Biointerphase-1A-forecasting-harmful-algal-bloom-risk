@@ -377,6 +377,31 @@ C.append(md("""**Findings**
 * **Similar to random forest:** macro-F1 0.64 at 1 week on `kb_only`, 0.51–0.53 at 4 weeks.
 * **Strong risk ranking** (bloom PR-AUC 0.90 at 1 week), but at-risk recall is low (0.04–0.22) and, with bloom history included, few escalations are caught (8–21 %)."""))
 
+# ---------------------------------------------------------------- 7. hybrid
+C.append(md("""---
+## 7. Persistence + escalation (hybrid)
+
+**What it is.** The learned models rank risk well (high PR-AUC) but lose the steady weeks that persistence gets right, while persistence can never forecast a change. The hybrid combines them:
+
+* By default, forecast the **last observed class** (persistence).
+* If that class was **no bloom** and a learned model's probability of at risk or bloom is above a threshold, **escalate** to at risk or bloom (whichever the model finds more likely).
+* The threshold is tuned on the training years only (an inner leave-one-year-out loop), never on the test year.
+
+Two versions: **Hybrid LR** (logistic regression base) and **Hybrid XGB** (XGBoost base), each on `kb_only`, `long` and `full` (`hybrid_escalation/train.py`)."""))
+C.append(code("""pd.concat({"Hybrid LR": model_table("hybrid_lr"), "Hybrid XGB": model_table("hybrid_xgb")})"""))
+C.append(code("""timeline("hybrid_lr", "kb_only")
+timeline("hybrid_lr", "full", horizon="h4w")
+timeline("hybrid_xgb", "long", horizon="h4w")"""))
+C.append(md("""**Score per test year:** Hybrid LR at 1 week (`kb_only`), then at 4 weeks (`full`):"""))
+C.append(code("""display(by_year("hybrid_lr", "kb_only"))
+by_year("hybrid_lr", "full", horizon="h4w")"""))
+C.append(md("""**What the figures show.** Top: Hybrid LR on bloom history, 1 week ahead. Middle: Hybrid LR on `full`, 4 weeks ahead. Bottom: Hybrid XGB on `long`, 4 weeks ahead (read as in §2). In the 4-week chart, orange false alarms fill long quiet stretches such as 2019–2021, while red missed warnings are rarer than for persistence.
+
+**Findings**
+* **1 week: Hybrid LR (`kb_only`) ties persistence** on macro-F1 (0.71 vs 0.71) while raising at-risk recall (0.36 → 0.44) and warning recall (0.85 → 0.88) and catching 19 % of escalations.
+* **2 weeks: the same tie** (Hybrid LR 0.66 vs persistence 0.65), with warning recall 0.80 → 0.86 and 29 % of escalations caught.
+* **4 weeks: the hybrids trade precision for early warning.** Hybrid LR on `full` flags 9 of 11 onsets and Hybrid XGB on `long` 8 of 11 (persistence: 5), catching 54 % and 49 % of escalations, but warning precision drops to 0.58–0.60 (about 4 in 10 warnings are false alarms). Macro-F1 is lower (0.55–0.57 vs 0.60)."""))
+
 
 nb["cells"] = C
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}

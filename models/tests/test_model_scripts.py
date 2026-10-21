@@ -39,3 +39,12 @@ def test_make_model_fits_and_predicts_three_classes(folder):
 def test_logistic_regression_is_balanced_and_penalised():
     lr = load("logistic_regression").make_model()[-1]
     assert lr.class_weight == "balanced" and lr.C == 0.1
+
+
+@pytest.mark.parametrize("base", ["logistic_regression", "xgboost"])
+def test_hybrid_wraps_the_base_model(base):
+    hybrid = load("hybrid_escalation")
+    X, y = small_data()
+    m = hybrid.make_hybrid(base).fit(X, y)
+    assert set(m.predict(X)) <= {0, 1, 2}
+    assert hybrid.load_make_model(base) is hybrid.load_make_model(base)   # loaded once
