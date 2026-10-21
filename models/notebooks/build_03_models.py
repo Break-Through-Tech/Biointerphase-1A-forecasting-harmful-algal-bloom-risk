@@ -263,6 +263,35 @@ C.append(md("""**Result.**
 * **Purging removes *h* weeks per fold** (1, 2 or 4): the last *h* training weeks before the test year. Folds 7–9 lose none, because sampling stopped well before those test years began, so their last training weeks are already months earlier.
 * **Some test years are small:** fold 7 (Aug 2021 – Jul 2022) has 4 test weeks and fold 8 has 11, because sampling nearly stopped in 2021–2023. Their scores below are noisy."""))
 
+# ---------------------------------------------------------------- 2. persistence
+C.append(md("""---
+## 2. Persistence
+
+**What it is.** Next week's class = the most recently observed class. It has no parameters and uses no features except the last observed class. This is the naïve forecast, the standard benchmark every forecasting method should beat [1].
+
+**Why it matters here.** The class rarely changes from one week to the next (94 % of no-bloom weeks stay no bloom, 84 % of bloom weeks stay bloom; `00_master_eda_and_merge.ipynb` §10.10), so persistence is hard to beat on overall accuracy. By design it can never predict a change.
+
+**Source**
+1. """ + HYNDMAN + """, §5.2 Some simple forecasting methods (naïve method)."""))
+C.append(code("""model_table("persistence")"""))
+C.append(code("""timeline("persistence", "kb_only")"""))
+C.append(md("""**Score per test year** (1 week ahead, `kb_only`):"""))
+C.append(code("""by_year("persistence", "kb_only")"""))
+C.append(md("""**How to read the chart.** Left: time over the test years, one block per week. The thin top strip is **what happened** (green = no bloom, yellow = at risk, dark red = bloom). The wide strip is **how the forecast did** that week:
+
+* light grey = **correct**
+* red = **missed warning**: at risk or bloom happened, but no bloom was forecast
+* orange = **false alarm**: a warning was forecast, but there was no bloom
+* purple = **wrong level**: at risk and bloom mixed up
+
+Right: the same four outcomes counted per test year. Blank stretches are weeks with no sample.
+
+For persistence, the red marks sit at the start of each yellow or dark-red stretch (it notices a change one week late), and the orange marks at the end (it keeps warning one week after a bloom ends).
+
+**Findings**
+* **The bar to beat:** macro-F1 0.71 at 1 week, 0.65 at 2 weeks and 0.60 at 4 weeks.
+* **Warnings are reliable but late:** warning precision 0.75–0.85, but only 5–7 of 11 bloom onsets get a warning, and no escalation is ever caught (0 %)."""))
+
 
 nb["cells"] = C
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}
