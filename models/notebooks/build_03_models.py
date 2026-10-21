@@ -335,6 +335,28 @@ C.append(md("""**What the figures show.** Timeline: read as in §2 (red = missed
 * **Adding the environment lowers macro-F1 at 1 week** (0.65 → 0.58 for `long`) but raises escalations caught at 4 weeks (0.19 → 0.51–0.63).
 * **Good risk ranking:** bloom PR-AUC 0.89 at 1 week, against 0.77 for persistence."""))
 
+# ---------------------------------------------------------------- 5. RF
+C.append(md("""---
+## 5. Random forest
+
+**What it is.** Many decision trees, each trained on a random sample of weeks and features; the forecast is their vote. Trees can capture thresholds and interactions, need no scaling, and handle missing values. Random forest is a recommended method in the project brief [1] and is the model in Medina et al.'s *K. brevis* early-warning forecast [2].
+
+**Set-up** (`random_forest/train.py`): 500 trees, at least 3 weeks per leaf, √(number of features) per split, class weights balanced per tree.
+
+**Sources**
+1. """ + BRIEF + """
+2. """ + MEDINA))
+C.append(code("""model_table("random_forest")"""))
+C.append(code("""timeline("random_forest", "kb_only")
+show("random_forest", "kb_only", kind="confusion")"""))
+C.append(md("""**Score per test year** (1 week ahead, `kb_only`):"""))
+C.append(code("""by_year("random_forest", "kb_only")"""))
+C.append(md("""**Findings**
+* **Best plain model at 1 week:** macro-F1 0.66 on `kb_only`, still below persistence (0.71).
+* **Best risk ranking of all models:** bloom PR-AUC 0.91–0.92 at 1 week.
+* **Almost never predicts at risk:** at-risk recall 0.00–0.22, and it catches almost no escalations (0–8 %). Its forecasts mostly follow the last class.
+* **Falls off at 4 weeks:** macro-F1 0.51–0.52 and only 1–2 of 11 onsets flagged."""))
+
 
 nb["cells"] = C
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}
