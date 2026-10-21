@@ -1473,6 +1473,80 @@ C.append(md("""### 8.7 Summary"""))
 C.append(code("""display(summarise_cleaning("chirps (rainfall grid)"))
 del chirps, valid, cells, land"""))
 
+# ---------------------------------------------------------------------------
+# 9. Cyanotoxins
+C.append(md("""---
+## 9. `florida_cyanotoxins_2015-01-01_to_2026-06-17` — freshwater toxins (reviewed, excluded from the red-tide table)
+
+| | |
+|---|---|
+| **What** | Lab results for cyanobacteria toxins: microcystins, cylindrospermopsin, anatoxin-a, nodularin, saxitoxins |
+| **Source** | Project data link [1]; records come from EPA's STORET database (`ProviderName`), submitted mainly by the South Florida Water Management District and Florida DEP (`Org_FormalName`) |
+| **Coverage** | 2015 – 2026, statewide |
+| **Role** | A **different HAB type**: toxins from freshwater cyanobacteria ("blue-green algae"), not from *K. brevis* [2] |
+
+**This section:** 9.1 load and first look · 9.2 data-quality checks · 9.3 is this the same kind of bloom as red tide? · 9.4 exploring the data · 9.5 findings · 9.6 decision · 9.7 summary
+
+**Sources**
+1. Florida cyanotoxin data story map. https://storymaps.arcgis.com/stories/ccc4c98425194605924ae474fb8002ba
+2. U.S. EPA (2019). *Recommended Human Health Recreational Ambient Water Quality Criteria or Swimming Advisories for Microcystins and Cylindrospermopsin*. EPA 822-R-19-001. https://www.epa.gov/sites/default/files/2019-05/documents/hh-rec-criteria-habs-document-2019.pdf"""))
+
+C.append(md("""### 9.1 Load and first look
+One row per toxin result per sample. The file has 65 columns, most of them metadata."""))
+C.append(code("""tox = pd.read_csv(find_file("florida_cyanotoxins_2015-01-01_to_2026-06-17"), low_memory=False)
+print(f"{len(tox):,} rows x {tox.shape[1]} columns")
+keep_cols = ["Location_Type", "Location_Latitude", "Location_Longitude", "Activity_StartDate", "Result_Characteristic",
+             "Reslt_Measre", "Result_MeasureUnit", "DetectionLimit_MeasureA"]
+display(tox[keep_cols].head(3))
+profile_columns(tox[keep_cols])"""))
+
+C.append(md("""### 9.2 Data-quality checks"""))
+C.append(code("""mc = tox[tox["Result_Characteristic"].str.contains("Microcystin", na=False)]
+vals = pd.to_numeric(mc["Reslt_Measre"], errors="coerce")
+dl = pd.to_numeric(mc["DetectionLimit_MeasureA"], errors="coerce")
+pd.DataFrame([
+    ("Columns entirely empty", int(tox.isna().all().sum())),
+    ("Units", str(tox["Result_MeasureUnit"].value_counts().head(3).to_dict())),
+    ("Missing result value", int(pd.to_numeric(tox["Reslt_Measre"], errors="coerce").isna().sum())),
+    ("Exact duplicate rows", int(tox.duplicated().sum())),
+    ("Microcystin results", f"{len(mc):,}"),
+    ("...below detection limit or zero", f"{((vals < dl) | (vals == 0)).mean():.1%}"),
+    ("...median / max (µg/L)", f"{vals.median()} / {vals.max()}"),
+    ("...over EPA recreational limit (8 µg/L)", int((vals > 8).sum())),
+], columns=["check", "result"])"""))
+
+C.append(md("""### 9.3 Is this the same kind of bloom as red tide?"""))
+C.append(code("""display(tox["Location_Type"].value_counts(normalize=True).round(3).head(6).to_frame("share of samples"))
+display(tox["Result_Characteristic"].value_counts().head(8).to_frame("results"))"""))
+C.append(md("""**Result.** 66 % of samples are from lakes, 13 % from rivers and streams, 16 % from canals and 3.4 % from estuaries. Each toxin (microcystin variants, cylindrospermopsin, anatoxin-a) is reported about 7,100 times, once per sample."""))
+
+C.append(md("""### 9.4 Exploring the data"""))
+C.append(code("""near = tox[is_in_box(tox["Location_Latitude"], tox["Location_Longitude"], REGIONAL_BOX)]
+print(f"Rows near Sarasota (regional box): {len(near):,} ->", near["Location_Type"].value_counts().head(4).to_dict())
+fig, ax = plt.subplots(figsize=(6, 5))
+ax.scatter(tox["Location_Longitude"], tox["Location_Latitude"], s=2, color="tab:green", alpha=0.3)
+ax.add_patch(plt.Rectangle((REGIONAL_BOX["lon"][0], REGIONAL_BOX["lat"][0]), 1.7, 1.7, fill=False, ec="orange"))
+ax.set_title("Cyanotoxin sample sites (orange = regional box)"); plt.show()"""))
+C.append(md("""**What the figure shows**
+
+* **Where toxin samples were taken.** The x-axis is longitude and the y-axis is latitude. Each green dot is a sample site, and the orange rectangle is the Sarasota regional box. Sites cover the whole state, and most are inland."""))
+
+C.append(md("""### 9.5 Findings
+* **66 % of samples are from lakes**, and most of the rest from rivers and canals. Inside the Sarasota regional box: 7,100 rows, mostly rivers, lakes and canals (988 from estuaries).
+* **97.6 % of microcystin results are below the detection limit** (median 0.25 µg/L), with rare values up to 780 µg/L. 337 of 72,626 exceed EPA's recommended recreational value of 8 µg/L [1].
+* **These toxins come from freshwater cyanobacteria** [1], a different organism from *K. brevis*, measured mostly in different waters.
+
+**Source**
+1. U.S. EPA (2019). *Recommended Human Health Recreational Ambient Water Quality Criteria or Swimming Advisories for Microcystins and Cylindrospermopsin*. EPA 822-R-19-001: "For microcystins, the recommended recreational value is 8 micrograms (μg)/liter (L)." https://www.epa.gov/sites/default/files/2019-05/documents/hh-rec-criteria-habs-document-2019.pdf"""))
+
+C.append(md("""### 9.6 Decision — **excluded from the red-tide table**
+It can't label or explain *K. brevis* weeks on the Sarasota coast."""))
+C.append(code("""log_step("florida_cyanotoxins", "raw file", tox)
+log_step("florida_cyanotoxins", "inside regional box", near, "freshwater toxins; different organism -> excluded")"""))
+C.append(md("""### 9.7 Summary"""))
+C.append(code("""display(summarise_cleaning("florida_cyanotoxins", subset_steps=["inside regional box"]))
+del tox, mc, near"""))
+
 
 nb["cells"] = C
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}

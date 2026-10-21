@@ -14,6 +14,7 @@ Datasets (all from the 1A repo data/ folder):
   6 SarasotaWindData             gridded zonal wind u (2019+)
   7 MoteMarine_BottomTemp        hourly water temp at Mote (2020-08 to 2025-03)
   8 chirps20GlobalDailyP05       gridded rainfall (reviewed, excluded: 3 years of coverage)
+  9 florida_cyanotoxins          freshwater toxins (reviewed, excluded: different organism/waters)
 """
 import numpy as np
 import pandas as pd
@@ -336,3 +337,31 @@ def review_chirps(log: CleaningLog) -> None:
     years = sorted(pd.to_datetime(c["time"]).dt.year.unique())
     log.record_step("chirps (rainfall grid)", "non-null precip", c,
              f"only years {[int(y) for y in years]}; Bradenton gauge covers 2015-2025 daily -> excluded")
+
+
+# ---------------------------------------------------------------------------
+# 9. Florida cyanotoxins (reviewed, excluded)
+# ---------------------------------------------------------------------------
+def review_cyanotoxins(log: CleaningLog) -> None:
+    """Profile the cyanotoxin file just enough to justify leaving it out.
+
+    Logs the raw row count and the rows inside the regional box. Nothing is
+    returned for modelling.
+
+    Args:
+        log (CleaningLog): Log that receives the counts and the reason for exclusion.
+
+    Returns:
+        None
+
+    Example:
+        >>> log = CleaningLog(); review_cyanotoxins(log)
+        >>> log.make_table()["step"].tolist()
+        ['raw', 'inside regional box']
+    """
+    t = pd.read_csv(DATA_DIR / "florida_cyanotoxins_2015-01-01_to_2026-06-17.csv", low_memory=False,
+                    usecols=["Location_Type", "Location_Latitude", "Location_Longitude"])
+    log.record_step("florida_cyanotoxins", "raw", t)
+    near = t[is_in_box(t["Location_Latitude"], t["Location_Longitude"], REGIONAL_BOX)]
+    log.record_step("florida_cyanotoxins", "inside regional box", near,
+             "freshwater cyanobacteria toxins (66% lakes statewide); different organism than K. brevis -> excluded")

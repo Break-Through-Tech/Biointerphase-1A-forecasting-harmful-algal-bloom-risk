@@ -180,3 +180,14 @@ def test_review_chirps_logs_rows_with_a_value_and_their_years(data_dir):
     t = log.make_table()
     assert t.loc[t["step"] == "non-null precip", "rows"].item() == 1
     assert "2016" in t.loc[t["step"] == "non-null precip", "note"].item()
+
+
+# ---------------------------------------------------------------- cyanotoxins (excluded)
+def test_review_cyanotoxins_logs_rows_inside_the_regional_box(data_dir):
+    pd.DataFrame({"Location_Type": ["Lake", "River"], "Location_Latitude": [27.0, 30.0],
+                  "Location_Longitude": [-82.5, -85.0]}).to_csv(
+        data_dir / "florida_cyanotoxins_2015-01-01_to_2026-06-17.csv", index=False)
+    log = CleaningLog()
+    loaders.review_cyanotoxins(log)
+    t = log.make_table()
+    assert t.loc[t["step"] == "inside regional box", "rows"].item() == 1
