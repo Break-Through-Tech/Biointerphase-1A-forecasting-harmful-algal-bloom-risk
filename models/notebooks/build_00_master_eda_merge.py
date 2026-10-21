@@ -1408,6 +1408,71 @@ C.append(md("""### 7.7 Cleaning summary"""))
 C.append(code("""display(summarise_cleaning(name))
 del mote_raw"""))
 
+# ---------------------------------------------------------------------------
+# 8. CHIRPS
+C.append(md("""---
+## 8. `chirps20GlobalDailyP05…` — gridded rainfall (reviewed, excluded)
+
+| | |
+|---|---|
+| **What** | Daily rainfall estimate (mm/day) on a 0.05° grid |
+| **Source** | CHIRPS v2.0, Climate Hazards Center, UC Santa Barbara [1], via ERDDAP |
+| **Coverage** | The file spans 2016 – 2026 (see 8.3) |
+
+**This section:** 8.1 load and first look · 8.2 data-quality checks · 8.3 which years actually have data? · 8.4 exploring the data · 8.5 findings · 8.6 decision · 8.7 summary
+
+**Source**
+1. Funk, C., Peterson, P., Landsfeld, M., et al. (2015). The climate hazards infrared precipitation with stations—a new environmental record for monitoring extremes. *Scientific Data*, 2, 150066. https://doi.org/10.1038/sdata.2015.66"""))
+
+C.append(md("""### 8.1 Load and first look"""))
+C.append(code("""chirps = read_erddap("chirps20GlobalDailyP05_0878_d358_0bc6")
+chirps["date"] = pd.to_datetime(chirps["time"]).dt.tz_localize(None)
+print(f"{len(chirps):,} rows x {chirps.shape[1]} columns")
+display(chirps.head(3))
+profile_columns(chirps)"""))
+
+C.append(md("""### 8.2 Data-quality checks"""))
+C.append(code("""valid = chirps.dropna(subset=["precip"])
+cells = chirps.groupby(["latitude", "longitude"])["precip"].count()
+pd.DataFrame([
+    ("Date range of the file", f"{chirps['date'].min().date()} -> {chirps['date'].max().date()}"),
+    ("Missing precipitation", f"{chirps['precip'].isna().mean():.0%}"),
+    ("Grid cells that ever have a value (land)", f"{(cells > 0).sum()} of {len(cells)}"),
+    ("Duplicate (date, lat, lon)", int(chirps.duplicated(["date", "latitude", "longitude"]).sum())),
+    ("Negative rainfall", int((valid["precip"] < 0).sum())),
+    ("Max daily rainfall (mm)", round(valid["precip"].max(), 1)),
+], columns=["check", "result"])"""))
+
+C.append(md("""### 8.3 Which years actually have data?"""))
+C.append(code("""days = valid.groupby(valid["date"].dt.year)["date"].nunique().reindex(range(2016, 2027), fill_value=0)
+days.plot(kind="bar", figsize=(10, 2.6), color="tab:blue", title="CHIRPS: days with any rainfall value, per year"); plt.show()
+days.to_frame("days with data").T"""))
+C.append(md("""**What the figure shows**
+
+* **Days with any rainfall value, per year.** The x-axis is the year and the y-axis is the number of days with at least one value. Only 2016 and 2020 are complete, and 2024 has about half a year. Every other year is empty."""))
+
+C.append(md("""### 8.4 Exploring the data"""))
+C.append(code("""land = valid.groupby(["latitude", "longitude"])["precip"].mean().reset_index()
+fig, ax = plt.subplots(figsize=(6, 5))
+sc = ax.scatter(land["longitude"], land["latitude"], c=land["precip"], s=8, cmap="Blues")
+plt.colorbar(sc, label="mean mm/day"); ax.set_title("CHIRPS: mean daily rain on land cells"); plt.show()"""))
+C.append(md("""**What the figure shows**
+
+* **Mean daily rain per grid cell.** The x-axis is longitude and the y-axis is latitude. Each dot is a cell with data, coloured by its mean rain (mm/day, darker = wetter). Only land cells appear; the ocean cells have no values. Inland cells are wetter (about 3 mm/day) than cells near the coast (about 2 mm/day)."""))
+
+C.append(md("""### 8.5 Findings
+* **Values exist only for 2016, 2020 and half of 2024.** Every other year in this extract is empty.
+* **Ocean cells are always empty**, so 75 % of rows are blank.
+* **Where data exists, it has no negative values.**"""))
+
+C.append(md("""### 8.6 Decision — **excluded**
+Three scattered years can't support weekly features across 2010–2026. The Bradenton rain gauge (§4) covers 2015–2025 daily and is used instead."""))
+C.append(code("""log_step("chirps (rainfall grid)", "raw file", chirps)
+log_step("chirps (rainfall grid)", "rows with a rainfall value", valid, "only 2016, 2020 and part of 2024 -> excluded")"""))
+C.append(md("""### 8.7 Summary"""))
+C.append(code("""display(summarise_cleaning("chirps (rainfall grid)"))
+del chirps, valid, cells, land"""))
+
 
 nb["cells"] = C
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}

@@ -168,3 +168,15 @@ def test_load_mote_keeps_readings_that_passed_quality_control(data_dir):
         "2021-06-01T00:00:00Z,29.0,1\n2021-06-01T01:00:00Z,45.0,4\n2021-06-01T02:00:00Z,29.5,3\n")
     m = loaders.load_mote(CleaningLog())
     assert m["sea_water_temperature"].tolist() == [29.0]
+
+
+# ---------------------------------------------------------------- CHIRPS (excluded)
+def test_review_chirps_logs_rows_with_a_value_and_their_years(data_dir):
+    (data_dir / "chirps20GlobalDailyP05_0878_d358_0bc6.csv").write_text(
+        "time,latitude,longitude,precip\nUTC,degrees_north,degrees_east,mm/day\n"
+        "2016-01-01T00:00:00Z,27.0,-82.5,3.0\n2017-01-01T00:00:00Z,27.0,-82.5,\n")
+    log = CleaningLog()
+    loaders.review_chirps(log)
+    t = log.make_table()
+    assert t.loc[t["step"] == "non-null precip", "rows"].item() == 1
+    assert "2016" in t.loc[t["step"] == "non-null precip", "note"].item()

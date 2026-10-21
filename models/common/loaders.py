@@ -13,6 +13,7 @@ Datasets (all from the 1A repo data/ folder):
   5 Sarasota_Wind&Temp           KSRQ airport hourly weather (2022-07+)
   6 SarasotaWindData             gridded zonal wind u (2019+)
   7 MoteMarine_BottomTemp        hourly water temp at Mote (2020-08 to 2025-03)
+  8 chirps20GlobalDailyP05       gridded rainfall (reviewed, excluded: 3 years of coverage)
 """
 import numpy as np
 import pandas as pd
@@ -307,3 +308,31 @@ def load_mote(log: CleaningLog) -> pd.DataFrame:
     log.record_step(name, "QC flag == 1 (pass)", df)
     df["date"] = pd.to_datetime(df["time"]).dt.tz_localize(None)
     return df[["date", "sea_water_temperature"]]
+
+
+# ---------------------------------------------------------------------------
+# 8. CHIRPS gridded rainfall (reviewed, excluded)
+# ---------------------------------------------------------------------------
+def review_chirps(log: CleaningLog) -> None:
+    """Profile the CHIRPS rainfall grid just enough to justify leaving it out.
+
+    Logs the raw row count and the rows that have a value, with the years they
+    fall in. Nothing is returned for modelling.
+
+    Args:
+        log (CleaningLog): Log that receives the counts and the reason for exclusion.
+
+    Returns:
+        None
+
+    Example:
+        >>> log = CleaningLog(); review_chirps(log)
+        >>> log.make_table()["step"].tolist()
+        ['raw', 'non-null precip']
+    """
+    c = read_erddap(DATA_DIR / "chirps20GlobalDailyP05_0878_d358_0bc6.csv", usecols=["time", "precip"])
+    log.record_step("chirps (rainfall grid)", "raw", c)
+    c = c.dropna(subset=["precip"])
+    years = sorted(pd.to_datetime(c["time"]).dt.year.unique())
+    log.record_step("chirps (rainfall grid)", "non-null precip", c,
+             f"only years {[int(y) for y in years]}; Bradenton gauge covers 2015-2025 daily -> excluded")
