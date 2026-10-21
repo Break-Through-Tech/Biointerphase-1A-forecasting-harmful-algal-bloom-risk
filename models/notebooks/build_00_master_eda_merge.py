@@ -1547,6 +1547,366 @@ C.append(md("""### 9.7 Summary"""))
 C.append(code("""display(summarise_cleaning("florida_cyanotoxins", subset_steps=["inside regional box"]))
 del tox, mc, near"""))
 
+# ---------------------------------------------------------------------------
+# 10. Merge
+C.append(md("""---
+## 10. Merge everything into the weekly modelling table
+
+**One row per week** (weeks end on Sunday), January 2010 – May 2026. Each source is summarised by week and joined on the week.
+
+**No peeking:** the features in week *t* use only data up to the end of week *t*. The label (`target`) is the class observed in week *t* + 1. Lags and rolling windows only look backwards. A week whose following week has no HABSOS sample gets no label.
+
+| Group | Built from | Features |
+|---|---|---|
+| Bloom history | §1 | weekly maximum, mean and 95th percentile (log), share of samples ≥ 10⁴ and ≥ 10⁵, regional maximum, 1- and 2-week lags, 4- and 8-week maximum, last observed class, weeks since last sample and last bloom |
+| Satellite chlorophyll | §2 | weekly mean (log), 90th percentile, share above 1 and 5 mg/m³, coastal mean, chlorophyll anomaly: this week minus the mean of the 8 weeks before, skipping the latest 2 [1] |
+| Water quality | §3 | 8-week medians: bay total nitrogen, total phosphorus, nitrate + nitrite, phosphate, chlorophyll-a, specific conductance, turbidity, dissolved oxygen; creek total nitrogen, total phosphorus, nitrate + nitrite |
+| Other water quality | §3 | 8-week medians of the remaining 20 bay and creek characteristics (e.g. BOD, pH, Kjeldahl nitrogen, fecal coliform, creek phosphate). In the table for testing; not yet in the models' feature sets |
+| Water temperature | §1, §3, §7 | one combined series (Mote, then bay stations, then HABSOS), 2-week change, warm weeks (> 28 °C) in the last 8, HABSOS salinity |
+| Air and rain | §4 | mean and maximum air temperature, rain totals over 1, 4, 8 and 12 weeks |
+| Wind | §5, §6 | u, v, speed and their 4-week means; airport air temperature and pressure; gridded u |
+| Season | — | week of year as sine and cosine |
+
+**Source**
+1. Stumpf, R. P., Culver, M. E., Tester, P. A., et al. (2003). Monitoring *Karenia brevis* blooms in the Gulf of Mexico using satellite ocean color imagery and other data. *Harmful Algae*, 2, 147–160. https://doi.org/10.1016/S1568-9883(02)00083-5"""))
+C.append(md("""### 10.1 Weekly calendar
+One row per week, each ending on a Sunday. Some features look back up to 8 weeks, so the calendar starts in 2008 to give the first weeks of 2010 a full history. The table is trimmed to start in 2010 in 10.9."""))
+C.append(code("""end = habsos["date"].max()
+weeks = pd.date_range("2008-01-01", end, freq=WEEK_RULE)
+print(f"{len(weeks)} weeks: {weeks[0].date()} -> {weeks[-1].date()}")"""))
+
+C.append(md("""### 10.2 Season (2 features)
+Computed from each week's date. The week of the year is placed on a circle (sine and cosine), so week 52 sits next to week 1.
+
+* `woy_` = **w**eek **o**f **y**ear · `_sin` / `_cos` = its sine and cosine. Season is included because blooms are seasonal (table below), as are rain (§4), chlorophyll (§2.4) and wind (§5)."""))
+C.append(code("""woy = weeks.isocalendar().week.astype(float).to_numpy()
+season = pd.DataFrame({"woy_sin": np.sin(2 * np.pi * woy / 52.18),     # 52.18 = average weeks per year (365.25 / 7)
+                       "woy_cos": np.cos(2 * np.pi * woy / 52.18)}, index=weeks)
+season.assign(week=woy.astype(int)).drop_duplicates("week").set_index("week").loc[[1, 13, 26, 39, 45, 52]].round(2)"""))
+C.append(md("""**How often blooms occur in each month** (Sarasota target box, all sampled weeks 2010–2026, by the week's highest cell count):"""))
+C.append(code("""wk_max = habsos[habsos["in_target"]].set_index("date")["cellcount"].resample(WEEK_RULE).max().loc[STUDY_START:].dropna()
+wk_class = pd.cut(wk_max, bins=CLASS_EDGES + [np.inf], labels=False, right=False)
+by_month = wk_class.groupby(wk_class.index.month)
+monthly = pd.DataFrame({"sampled weeks": by_month.size(),
+                        "bloom %": 100 * by_month.apply(lambda c: (c == 2).mean()),
+                        "at risk %": 100 * by_month.apply(lambda c: (c == 1).mean())}).round(0).astype(int)
+fig, ax = plt.subplots(figsize=(10, 3.2))
+ax.bar(monthly.index, monthly["bloom %"], color="tab:red", label="bloom")
+ax.bar(monthly.index, monthly["at risk %"], bottom=monthly["bloom %"], color="tab:orange", label="at risk")
+ax.set_xticks(range(1, 13)); ax.set_xlabel("month"); ax.set_ylabel("% of sampled weeks"); ax.legend(frameon=False)
+ax.set_title("Share of weeks at bloom / at-risk level, by month (2010-2026)"); plt.show()
+monthly.T"""))
+C.append(md("""**Result.** Blooms are rare in spring and early summer and common from October to January: 1 % of sampled weeks are at bloom level in May, against 32 % in October, 47 % in November, 39 % in December and 35 % in January. At-risk weeks peak in September (18 %), just before the bloom season."""))
+
+C.append(md("""### 10.3 Bloom history and the weekly class (21 features)
+Built from the cleaned HABSOS samples (§1). How to read the names:
+
+* `kb_` = *Karenia brevis* (KB), from samples in the Sarasota target box.
+* `rkb_` = regional *K. brevis*, from samples in the wider regional box (§1 Step 5).
+* `_log` = log10(cells/L + 1) · `_frac_1e4` / `_frac_1e5` = share of samples at ≥ 10⁴ / ≥ 10⁵ cells/L · `_p95` = 95th percentile · `_L1` / `_L2` = the value 1 or 2 weeks earlier · `_4w` / `_8w` = over the last 4 or 8 weeks.
+
+Each feature and why:
+
+| Features | How | Why |
+|---|---|---|
+| `kb_max_log`, `kb_mean_log`, `kb_p95_log` | weekly max, mean and 95th percentile of cell counts in the target box, log10(count + 1) | counts span about eight orders of magnitude (§1.4); the weekly max also sets the class |
+| `kb_frac_1e4`, `kb_frac_1e5`, `kb_n_samples` | share of the week's samples at ≥ 10⁴ and ≥ 10⁵ cells/L; number of samples | how widespread high counts are, not just the single highest |
+| `rkb_max_log`, `rkb_frac_1e5`, `rkb_n_samples` | the same over the wider regional box | blooms start offshore and are carried to shore (§1 Step 7) |
+| `_L1`, `_L2`, `_4w`, `_8w` versions | values 1 and 2 weeks earlier; maximum over the last 4 and 8 weeks | Medina et al.'s forecast ranked recent *K. brevis* features highest [1] |
+| `last_class`, `weeks_since_sample`, `weeks_since_bloom` | most recent observed class; weeks since the last sample and last bloom week | the class changes slowly from week to week (10.10), so the last known state matters |
+
+`kb_class` is the class of the weekly maximum (no bloom < 10⁴ ≤ at risk < 10⁵ ≤ bloom, §1.3). It becomes the label in 10.9 and is not a feature itself.
+
+**Source**
+1. Medina, M., Julian, P., Chin, N., & Davis, S. E. (2024). An early-warning forecast model for red tide (*Karenia brevis*) blooms on the southwest coast of Florida. *Harmful Algae*, 139, 102729. https://doi.org/10.1016/j.hal.2024.102729"""))
+C.append(code("""def to_class(cells):
+    \"\"\"Convert cell counts to the three red-tide classes.
+
+    Args:
+        cells (pandas.Series): K. brevis cells per litre (NaN = not sampled).
+
+    Returns:
+        pandas.Series: 0 = no bloom (< 10,000), 1 = at risk (10,000-99,999),
+            2 = bloom (>= 100,000); NaN stays NaN.
+    \"\"\"
+    return pd.cut(cells, bins=CLASS_EDGES + [np.inf], labels=False, right=False)
+
+tgt = habsos[habsos["in_target"]].set_index("date")["cellcount"].resample(WEEK_RULE)
+reg = habsos.set_index("date")["cellcount"].resample(WEEK_RULE)
+kb = pd.DataFrame(index=weeks)
+kb["kb_n_samples"] = tgt.size().reindex(weeks).fillna(0)
+kb["kb_max"] = tgt.max().reindex(weeks)
+kb["kb_max_log"] = np.log10(kb["kb_max"] + 1)
+kb["kb_p95_log"] = np.log10(tgt.quantile(0.95).reindex(weeks) + 1)
+kb["kb_mean_log"] = np.log10(tgt.mean().reindex(weeks) + 1)
+kb["kb_frac_1e4"] = tgt.apply(lambda s: (s >= 1e4).mean() if len(s) else np.nan).reindex(weeks)
+kb["kb_frac_1e5"] = tgt.apply(lambda s: (s >= 1e5).mean() if len(s) else np.nan).reindex(weeks)
+kb["rkb_max_log"] = np.log10(reg.max().reindex(weeks) + 1)
+kb["rkb_frac_1e5"] = reg.apply(lambda s: (s >= 1e5).mean() if len(s) else np.nan).reindex(weeks)
+kb["rkb_n_samples"] = reg.size().reindex(weeks).fillna(0)
+kb["kb_class"] = to_class(kb["kb_max"])
+kb["last_class"] = kb["kb_class"].ffill()
+seen = kb["kb_class"].notna()
+kb["weeks_since_sample"] = seen.groupby(seen.cumsum()).cumcount().where(seen.cumsum() > 0)
+bloom = kb["kb_class"] == 2
+kb["weeks_since_bloom"] = bloom.groupby(bloom.cumsum()).cumcount().astype(float).where(bloom.cumsum() > 0)
+for lag in (1, 2):
+    for c in ["kb_max_log", "kb_frac_1e5", "rkb_max_log"]:
+        kb[f"{c}_L{lag}"] = kb[c].shift(lag)
+kb["kb_max_log_4w"] = kb["kb_max_log"].rolling(4, min_periods=1).max()
+kb["kb_max_log_8w"] = kb["kb_max_log"].rolling(8, min_periods=1).max()
+kb["rkb_max_log_4w"] = kb["rkb_max_log"].rolling(4, min_periods=1).max()
+kb.loc["2018-08":"2018-09", ["kb_max", "kb_class", "last_class", "kb_max_log_L1", "kb_max_log_4w", "weeks_since_bloom"]].round(2)"""))
+
+C.append(md("""### 10.4 Satellite chlorophyll (8 features)
+Built from the merged chlorophyll pixels in the target box (§2). Each day is summarised over the box, then averaged over the week. How to read the names:
+
+* `chl_` = satellite chlorophyll-a (mg/m³) in the Sarasota target box.
+* `_mean_log` = log10 of the mean · `_p90` = 90th percentile · `_frac_gt1` / `_frac_gt5` = share of pixels above 1 / 5 mg/m³ · `_coastal` = only pixels within 10 km of land · `_anomaly` = difference from the recent baseline · `_change_1w` = change from the previous week.
+
+| Features | How | Why |
+|---|---|---|
+| `chl_mean_log`, `chl_p90` | mean (log10) and 90th percentile of the box | overall level and the high end |
+| `chl_frac_gt1`, `chl_frac_gt5` | share of pixels above 1 and 5 mg/m³ | how much of the box is green, not only how green |
+| `chl_coastal_mean` | mean over pixels within 10 km of land (§2 Step 3) | the coastal strip, where *K. brevis* is counted |
+| `chl_anomaly`, `chl_coastal_anomaly` | this week minus the mean of the 8 weeks before, skipping the latest 2 | NOAA's red-tide flag compares the current image with a 60-day mean ending two weeks earlier [1][2] |
+| `chl_mean_log_change_1w` | change in `chl_mean_log` from last week | a sudden rise |
+
+**Sources**
+1. Stumpf, R. P., Culver, M. E., Tester, P. A., et al. (2003). Monitoring *Karenia brevis* blooms in the Gulf of Mexico using satellite ocean color imagery and other data. *Harmful Algae*, 2, 147–160. https://doi.org/10.1016/S1568-9883(02)00083-5
+2. Tomlinson, M. C. (2004). *Satellite detection and monitoring of harmful algal blooms* (PICES-13 presentation): example anomaly for 22 Sep 2001 against the 60-day mean of 10 Jul – 8 Sep 2001. https://meetings.pices.int/Publications/Presentations/PICES_13/PICES_13_HAB/Tomlinson_HAB.pdf"""))
+C.append(code("""daily = chl.groupby("date")["chlor_a"]
+d = pd.DataFrame({"chl_mean": daily.mean(), "chl_p90": daily.quantile(0.9),
+                  "chl_frac_gt1": daily.apply(lambda s: (s > 1).mean()), "chl_frac_gt5": daily.apply(lambda s: (s > 5).mean())})
+d = d.join(chl[chl["coastal"] == 1].groupby("date")["chlor_a"].mean().rename("chl_coastal_mean"))
+cf = d.resample(WEEK_RULE).mean().reindex(weeks)
+cf["chl_mean_log"] = np.log10(cf["chl_mean"])
+cf["chl_anomaly"] = cf["chl_mean"] - cf["chl_mean"].shift(2).rolling(8, min_periods=3).mean()
+cf["chl_coastal_anomaly"] = cf["chl_coastal_mean"] - cf["chl_coastal_mean"].shift(2).rolling(8, min_periods=3).mean()
+cf["chl_mean_log_change_1w"] = cf["chl_mean_log"].diff()
+cf = cf.drop(columns="chl_mean")
+cf.loc["2010":].describe().T[["count", "mean", "min", "max"]].round(2)"""))
+
+C.append(md("""### 10.5 Water quality (11 features + 20 for testing)
+Built from the cleaned bay and creek measurements (§3), kept separate (§3 Step 6). Each characteristic is first reduced to a weekly median per program, then to a **trailing 8-week median**: before 2016 the bay is sampled about monthly (§3.4), so a single week is usually empty, while 8 weeks usually contain a sample.
+
+How to read the names:
+
+* `bay_` = bay stations (`SARASOTAES_WQ`) · `creek_` = creek stations (`SARASOTA_COASTALCREEK_WQ`) · `_8w` = trailing 8-week median.
+* `tn` = total nitrogen · `tp` = total phosphorus · `nox` = nitrate + nitrite · `po4` = phosphate · `nh3` = ammonia · `tkn` = Kjeldahl nitrogen · `chl_insitu` = chlorophyll-a measured in the water (corrected) · `chl_uncorr` = chlorophyll-a, uncorrected · `spcond` = specific conductance · `turbidity` = turbidity · `do` = dissolved oxygen · `do_sat` = dissolved oxygen saturation · `bod` = biochemical oxygen demand · `ph` = pH · `tss` = total suspended solids · `color` = true colour · `fecal_coliform` = fecal coliform.
+
+Feature names use short codes (e.g. `bay_tn_8w`) so this table matches the models' table exactly."""))
+C.append(code("""wk = (nut.assign(week=nut["date"].dt.to_period(WEEK_RULE).dt.end_time.dt.normalize())
+         .pivot_table(index="week", columns=["source", "var"], values="value", aggfunc="median"))
+FEATURE_ABBREV = {"total nitrogen": "tn", "total phosphorus": "tp", "nitrate + nitrite": "nox", "phosphate": "po4",
+                  "ammonia": "nh3", "chlorophyll-a (corrected)": "chl_insitu", "water temperature (°F)": "water_temp_f",
+                  "specific conductance": "spcond", "turbidity": "turbidity", "dissolved oxygen": "do",
+                  "biochemical oxygen demand": "bod", "chlorophyll-a (uncorrected)": "chl_uncorr",
+                  "dissolved oxygen saturation": "do_sat", "fecal coliform": "fecal_coliform", "Kjeldahl nitrogen": "tkn",
+                  "pH": "ph", "total suspended solids": "tss", "true colour": "color"}
+wk = wk[[c for c in wk.columns if c[1] in FEATURE_ABBREV]]
+wk.columns = [f"{s}_{FEATURE_ABBREV[v]}" for s, v in wk.columns]
+wk = wk.reindex(weeks)
+keep = ["bay_tn", "bay_tp", "bay_nox", "bay_po4", "bay_chl_insitu", "bay_spcond", "bay_turbidity", "bay_do",
+        "creek_tn", "creek_tp", "creek_nox"]
+extra = ["bay_bod", "bay_ph", "bay_tkn", "bay_do_sat", "bay_tss", "bay_color",
+         "creek_po4", "creek_nh3", "creek_chl_insitu", "creek_chl_uncorr", "creek_spcond",
+         "creek_turbidity", "creek_do", "creek_do_sat", "creek_fecal_coliform", "creek_tkn",
+         "creek_bod", "creek_ph", "creek_tss", "creek_color"]
+med8 = wk.rolling(8, min_periods=1).median()
+nf = pd.concat([med8[keep], med8.reindex(columns=extra)], axis=1).add_suffix("_8w")
+bay_water_temp_c = (wk["bay_water_temp_f"] - 32) * 5 / 9
+pd.DataFrame({"weeks with a weekly value": wk[keep].loc["2010":].notna().sum(),
+              "weeks with an 8-week value": nf[[f"{c}_8w" for c in keep]].loc["2010":].notna().sum().values}).T"""))
+C.append(md("""**Result.** Since 2010, a single week has a bay value in only about 190 of 853 weeks; the trailing 8-week median gives a value in about 840."""))
+
+C.append(md("""### 10.6 Water temperature (4 features)
+Three sources measure water temperature, each with gaps: the Mote sensor (2020–2025, hourly, §7), the bay stations (§3) and the HABSOS samples (§1). They are combined into one series, using Mote first, then the bay stations, then HABSOS, and gaps of up to 2 weeks are interpolated.
+
+* `_c` = degrees Celsius · `mote_` = Mote sensor · `habsos_` = HABSOS samples in the target box · `_change_2w` = change over the last 2 weeks · `warm_weeks_8w` = number of the last 8 weeks above 28 °C.
+
+| Feature | How |
+|---|---|
+| `water_temp_c` | the combined weekly series |
+| `water_temp_change_2w` | change over the last 2 weeks |
+| `warm_weeks_8w` | weeks above 28 °C in the last 8 (28 °C is a project choice) |
+| `habsos_salinity` | weekly mean salinity of HABSOS samples in the target box |"""))
+C.append(code("""wt = pd.DataFrame(index=weeks)
+wt["mote_water_temp_c"] = mote.set_index("date")["sea_water_temperature"].resample(WEEK_RULE).mean().reindex(weeks)
+ht = habsos[habsos["in_target"]].set_index("date")
+wt["habsos_water_temp_c"] = ht["water_temp"].resample(WEEK_RULE).mean().reindex(weeks)
+wt["habsos_salinity"] = ht["salinity"].resample(WEEK_RULE).mean().reindex(weeks)
+wt["water_temp_c"] = wt["mote_water_temp_c"].fillna(bay_water_temp_c).fillna(wt["habsos_water_temp_c"]).interpolate(limit=2)
+wt["water_temp_change_2w"] = wt["water_temp_c"].diff(2)
+wt["warm_weeks_8w"] = (wt["water_temp_c"] > 28).rolling(8, min_periods=1).sum()
+src = np.select([wt["mote_water_temp_c"].notna(), bay_water_temp_c.notna(), wt["habsos_water_temp_c"].notna()],
+                ["Mote", "bay stations", "HABSOS"], "interpolated or missing")
+pd.Series(src, index=weeks).loc["2010":].value_counts().rename("weeks").to_frame()"""))
+C.append(md("""**Result.** Since 2010, HABSOS samples supply the temperature in 485 weeks, Mote in 191 and the bay stations in 148; 29 weeks are interpolated or still missing."""))
+
+C.append(md("""### 10.7 Air temperature and rain (6 features)
+Built from the Bradenton station (§4, 2015–2025).
+
+* `air_temp_f` = air temperature in °F · `_max` = weekly maximum · `rain_in_Nw` = inches of rain over the last N weeks.
+
+| Features | How | Why |
+|---|---|---|
+| `air_temp_f`, `air_temp_max_f` | weekly mean and maximum air temperature | weather conditions |
+| `rain_in_1w`, `_4w`, `_8w`, `_12w` | rain totals over the last 1, 4, 8 and 12 weeks | rain and runoff raise nutrient loads to estuaries [1], and the effect can arrive weeks later, so several windows are offered |
+
+**Source**
+1. Phlips, E. J., Badylak, S., Nelson, N. G., & Havens, K. E. (2020). Hurricanes, El Niño and harmful algal blooms in two sub-tropical Florida estuaries: Direct and indirect impacts. *Scientific Reports*, 10, 1910. https://doi.org/10.1038/s41598-020-58771-4"""))
+C.append(code("""b = brad.set_index("date").resample(WEEK_RULE).agg({"precipitation": "sum", "mean_temp": "mean", "max_temp": "max"}).reindex(weeks)
+wx = pd.DataFrame(index=weeks)
+wx["air_temp_f"], wx["air_temp_max_f"] = b["mean_temp"], b["max_temp"]
+for w in (1, 4, 8, 12):
+    wx[f"rain_in_{w}w"] = b["precipitation"].rolling(w, min_periods=max(1, w // 2)).sum()
+wx.loc["2015":"2025"].describe().T[["count", "mean", "min", "max"]].round(2)"""))
+
+C.append(md("""### 10.8 Wind and airport weather (9 features)
+Built from the airport station (§5, from July 2022) and the gridded east–west wind (§6, from 2019). How to read the names:
+
+* `wind_u` = east–west part of the airport wind (m/s, + = blowing toward the east) · `wind_v` = north–south part (+ = toward the north, so a northerly wind is negative) · `wind_speed` in m/s.
+* `ksrq_` = the airport station (KSRQ, Sarasota–Bradenton airport) · `pressure_mb` = air pressure in millibars.
+* `grid_uwnd` = gridded east–west wind (`uwnd` in the CCMP file, m/s) · `_4w` = mean over the last 4 weeks.
+
+| Features | How | Why |
+|---|---|---|
+| `wind_u`, `wind_v`, `wind_speed` | weekly means of the airport's east–west and north–south parts (§5 Step 1) and speed | bloom probability is much higher under northerly winds [1] |
+| `wind_u_4w`, `wind_v_4w` | 4-week means | wind over a longer period, not only one week (the 4 weeks are a project choice) |
+| `ksrq_air_temp_c`, `pressure_mb` | weekly mean airport air temperature and pressure | weather conditions |
+| `grid_uwnd`, `grid_uwnd_4w` | weekly and 4-week mean of the gridded east–west wind | the only wind before 2022 |
+
+**Source**
+1. Li, M. F., Glibert, P. M., & Lyubchich, V. (2021). Machine learning classification algorithms for predicting *Karenia brevis* blooms on the West Florida Shelf. *Journal of Marine Science and Engineering*, 9(9), 999. https://doi.org/10.3390/jmse9090999"""))
+C.append(code("""k = ksrq.set_index("date").resample(WEEK_RULE).mean().reindex(weeks)
+wx["wind_u"], wx["wind_v"], wx["wind_speed"] = k["wind_u"], k["wind_v"], k["wind_speed"]
+wx["wind_v_4w"] = wx["wind_v"].rolling(4, min_periods=2).mean()
+wx["wind_u_4w"] = wx["wind_u"].rolling(4, min_periods=2).mean()
+wx["ksrq_air_temp_c"], wx["pressure_mb"] = k["air_temperature"], k["air_pressure_at_mean_sea_level"]
+u = uwind.set_index("date")["uwnd"].resample(WEEK_RULE).mean().reindex(weeks)
+wx["grid_uwnd"], wx["grid_uwnd_4w"] = u, u.rolling(4, min_periods=2).mean()
+wx[["wind_u", "wind_v", "grid_uwnd"]].notna().groupby(wx.index.year).sum().loc[2018:].T"""))
+
+C.append(md("""### 10.9 Join everything and add the label
+All groups are joined on the week. The label (`target`) is the class observed `HORIZON_WEEKS` (here 1) week later, so features in week *t* never use data from the week being predicted. The table is then cut to start in January 2010.
+
+* `target` = next week's class: 0 = no bloom, 1 = at risk, 2 = bloom · `target_week` = the week the label comes from · `kb_class` = this week's class (the source of `target`, not a feature) · `kb_max` = this week's highest count in cells/L (not a feature)."""))
+C.append(code("""table = pd.concat([kb, cf, nf, wt, wx], axis=1)
+table["woy_sin"], table["woy_cos"] = season["woy_sin"], season["woy_cos"]
+table["target"] = table["kb_class"].shift(-HORIZON_WEEKS)
+table["target_week"] = table.index + pd.Timedelta(weeks=HORIZON_WEEKS)
+table = table.loc[STUDY_START:]
+print(table.shape, table.index.min().date(), "->", table.index.max().date())
+table.head(3)"""))
+C.append(md("""**Result.** 853 weeks (3 Jan 2010 – 3 May 2026) and 83 feature columns: 62 in the models' feature sets, the 20 water-quality columns kept for testing, and `habsos_water_temp_c` (used only inside the combined temperature series)."""))
+C.append(md("""#### Raw columns left out of the table
+Columns from the kept datasets that do not become features, and why:
+
+| Dataset | Column(s) | Why left out |
+|---|---|---|
+| HABSOS | `CATEGORY` | Same information as `CELLCOUNT`, and blank on 856 rows (§1.3) |
+| | `WIND_DIR`, `WIND_SPEED` | Not recorded on over 99 % of samples (QA flag 9 = no data) |
+| | `STATE_ID`, `DESCRIPTION`, depth, units, QA and comment columns | Used only for cleaning (QA flag, region box, depth filter) |
+| Chlorophyll | `altitude` | Always 0 |
+| Nutrients | water temperature | Not its own feature; fills gaps in the water-temperature series (10.6) |
+| | station, depth, qualifier and other metadata | Used only for cleaning (duplicates, detection limits, near-bottom readings, bay/creek label) |
+| Bradenton | `MIN TEMP` | Used to fill blank mean temperatures (§4 Step 2) |
+| | `COOPID`, `YEAR`, `MONTH`, `DAY` | Station ID (the same on every row); the date parts are combined into the date |
+| Airport (KSRQ) | wind gust | 87 % missing |
+| | visibility, dew point | Not used as features |
+| | QC-flag columns | All 2, "not evaluated" (§5.4) |
+| Mote | QC flag, latitude, longitude, depth | The flag only filters readings; location and depth are the same on every row |
+
+Gridded wind keeps its only variable (`uwnd`). Every nutrient characteristic is in the table (10.5), including the 20 kept for testing."""))
+C.append(md("""### 10.10 Checks on the merged table"""))
+C.append(code("""lab = table[table["target"].notna()]
+checks = {
+    "weeks": len(table),
+    "weeks with a label": len(lab),
+    "duplicate weeks": int(table.index.duplicated().sum()),
+    "label: no_bloom / at_risk / bloom": " / ".join(str(int((lab["target"] == c).sum())) for c in range(3)),
+    "label matches class one week later": bool((table["target"].dropna() == table["kb_class"].shift(-1).dropna().reindex(table["target"].dropna().index)).all()),
+    "feature columns": table.shape[1] - 4,   # minus kb_max, kb_class, target, target_week
+}
+display(pd.Series(checks, name="value").to_frame())
+
+groups = {"bloom history": ["kb_max_log", "kb_frac_1e5", "rkb_max_log", "kb_max_log_4w"],
+          "satellite chl": ["chl_mean_log", "chl_anomaly", "chl_p90"],
+          "water quality": ["bay_tn_8w", "bay_tp_8w", "bay_po4_8w", "bay_chl_insitu_8w"],
+          "water temp": ["water_temp_c", "habsos_salinity"],
+          "air + rain": ["air_temp_f", "rain_in_4w"],
+          "airport wind": ["wind_u", "wind_v"], "gridded wind": ["grid_uwnd"], "Mote temp": ["mote_water_temp_c"]}
+cov = pd.DataFrame({g: lab[c].notna().mean(axis=1).groupby(lab.index.year).mean() for g, c in groups.items()})
+fig, ax = plt.subplots(figsize=(12, 3.6))
+im = ax.imshow(cov.T.values, aspect="auto", cmap="Greens", vmin=0, vmax=1)
+ax.set_xticks(range(len(cov)), cov.index); ax.set_yticks(range(len(cov.columns)), cov.columns)
+plt.colorbar(im, label="share present"); ax.set_title("Which sources cover which years (labelled weeks)"); ax.grid(False)
+plt.show()"""))
+C.append(md("""**What the checks show**
+
+* **739 of 853 weeks have a label:** 535 no bloom, 60 at risk, 144 bloom. Every label equals the class one week later, and no week appears twice.
+* **Coverage figure.** Rows are feature groups and columns are years; colour is the share of labelled weeks that have that group (dark = always present). Bloom history, satellite chlorophyll, water quality and water temperature cover almost every year. Bloom history thins in 2022–2023, when Sarasota sampling nearly stopped (§1.5). Air and rain start in 2015, gridded wind in 2019, airport wind in 2022, and Mote covers 2020–2025 with its 2023 gap."""))
+C.append(code("""fig, axes = plt.subplots(1, 2, figsize=(15, 3.6), gridspec_kw={"width_ratios": [3, 1]})
+colors = table["kb_class"].map({0: "tab:green", 1: "tab:orange", 2: "tab:red"}).fillna("0.85")
+axes[0].scatter(table.index, table["kb_max_log"], c=colors, s=7)
+axes[0].axhline(4, ls="--", c="0.5", lw=0.8); axes[0].axhline(5, ls="--", c="0.5", lw=0.8)
+axes[0].set_title("Weekly max K. brevis in the Sarasota box (green / orange / red = no bloom / at risk / bloom)")
+axes[0].set_ylabel("log10 cells/L")
+trans = pd.crosstab(lab["last_class"].map(dict(enumerate(CLASS_NAMES))), lab["target"].map(dict(enumerate(CLASS_NAMES))),
+                    normalize="index").loc[CLASS_NAMES, CLASS_NAMES]
+axes[1].imshow(trans.values, cmap="Blues", vmin=0, vmax=1)
+for i in range(3):
+    for j in range(3): axes[1].text(j, i, f"{trans.values[i, j]:.2f}", ha="center", va="center")
+axes[1].set_xticks(range(3), CLASS_NAMES, rotation=20); axes[1].set_yticks(range(3), CLASS_NAMES); axes[1].grid(False)
+axes[1].set_title("Last class (rows) -> next week (cols)")
+plt.tight_layout(); plt.show()"""))
+C.append(md("""**What the figures show**
+
+* **Left: weekly maximum *K. brevis* in the Sarasota box.** The x-axis is time and the y-axis is log10 cells/L; colour is the class (green no bloom, orange at risk, red bloom) and the dashed lines mark 10⁴ and 10⁵. Blooms come in multi-month episodes, for example 2016–2019 and late 2024.
+* **Right: how the class changes from one week to the next.** Rows are this week's class and columns are next week's; each row sums to 1. A no-bloom week is followed by another no-bloom week 94 % of the time, and a bloom week by another bloom week 84 % of the time. At-risk weeks are the least predictable: 38 % fall back, 35 % stay and 27 % become blooms.
+* **This is why persistence ("next week = this week") is the baseline** every model is compared against, as in Medina et al. [1].
+
+**Source**
+1. Medina, M., Julian, P., Chin, N., & Davis, S. E. (2024). An early-warning forecast model for red tide (*Karenia brevis*) blooms on the southwest coast of Florida. *Harmful Algae*, 139, 102729. https://doi.org/10.1016/j.hal.2024.102729"""))
+C.append(md("""### 10.11 Which features move with next week's class? (quick screen)
+Spearman correlation of each feature with next week's class (0 / 1 / 2). This is a quick screen, not feature selection: tree models can also use combinations of features that a one-by-one correlation misses."""))
+C.append(code("""feat_cols = [c for c in table.columns if c not in ("kb_max", "kb_class", "target", "target_week")]
+rho = lab[feat_cols].corrwith(lab["target"], method="spearman").dropna()
+screen = pd.DataFrame({"spearman_rho": rho, "weeks_with_data": lab[rho.index].notna().sum()})
+screen.reindex(rho.abs().sort_values(ascending=False).index).head(20).round(3)"""))
+C.append(md("""**Result.** The 18 strongest features are all bloom history (ρ 0.61–0.84). The strongest environmental features are the 4-week mean east–west wind (ρ −0.49, but only 135 labelled weeks) and bay phosphate (ρ 0.42, 726 weeks)."""))
+C.append(md("""### 10.12 Cleaning log — how much of each dataset survives
+Every logged step from §1–§9 in one table. `pct_of_first_step` is the rows remaining as a share of that dataset's first step."""))
+C.append(code("""log = pd.DataFrame(LOG)
+log["pct_of_first_step"] = log.groupby("dataset")["rows"].transform(lambda s: (100 * s / s.iloc[0]).round(1))
+log"""))
+C.append(md("""### 10.13 Save"""))
+C.append(code("""table.to_csv(OUTPUT_DIR / "weekly_sarasota_h1.csv")
+log.to_csv(OUTPUT_DIR / "cleaning_log.csv", index=False)
+try:
+    table.to_parquet(OUTPUT_DIR / "weekly_sarasota_h1.parquet")
+except ImportError:
+    pass
+print("saved to", OUTPUT_DIR, "->", sorted(p.name for p in OUTPUT_DIR.iterdir()))"""))
+
+C.append(md("""---
+## Summary of decisions
+
+| Dataset | Decision | Main reason |
+|---|---|---|
+| HABSOS | **Keep**, rebuilt from the raw file | The only *K. brevis* source: gives the label and bloom history. Rows missing salinity or temperature are kept |
+| Satellite chlorophyll | **Keep**, DS1 + quantile-mapped DS2 | Environmental record from 2010; chlorophyll anomaly feature |
+| NutrientsFL | **Keep**, duplicates removed, bay and creek separate | Nitrogen and phosphorus drivers; all characteristics kept for later testing |
+| Bradenton | **Keep** | Rain (lagged) and air temperature, 2015–2025 |
+| KSRQ airport | **Keep**, wind as u/v | Northerly wind raises bloom probability; only from July 2022 |
+| Gridded wind | **Keep** | East–west only, from 2019 |
+| Mote | **Keep**, part of one water-temperature series | Short record with a one-year gap |
+| CHIRPS | **Exclude** | Only 2016, 2020 and half of 2024 |
+| Cyanotoxins | **Exclude** from the red-tide table | Freshwater cyanobacteria, a different organism |
+
+**No scaling here.** Features are scaled inside each model's training split, so test-period statistics never reach training. Extreme cell counts are kept because they are the blooms."""))
+
 
 nb["cells"] = C
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}
