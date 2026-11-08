@@ -1,12 +1,19 @@
-"""Cross-validate a model on the weekly table."""
-from collections.abc import Callable
+"""Cross-validate a model on the weekly table, and save its predictions and scores."""
+import json
+from collections.abc import Callable, Iterable
 
 import numpy as np
 import pandas as pd
 
-from .feature_sets import list_feature_columns
+from .config import RESULTS_DIR
+from .feature_sets import FEATURE_SETS, list_feature_columns
+from .metrics import summarise_predictions
 from .validation import make_folds, select_labelled_rows
 from .weekly import build_weekly
+
+SUMMARY_COLUMNS = ["feature_set", "scheme", "macro_f1", "kappa", "recall_at_risk", "recall_bloom",
+                   "warning_recall", "onsets_caught_bloom", "onsets_caught_any_warning",
+                   "n_escalations", "escalation_recall", "escalation_precision"]
 
 
 def cross_validate(make_model: Callable, feature_set: str, scheme: str,
@@ -52,3 +59,38 @@ def cross_validate(make_model: Callable, feature_set: str, scheme: str,
             "last_class": lab["last_class"].to_numpy()[te],
         }, index=lab.index[te]))
     return pd.concat(rows).sort_index()
+
+
+def run_model(model_name: str, make_model: Callable, feature_sets: Iterable[str] | None = None,
+              schemes: Iterable[str] = ("loyo", "forward", "holdout")) -> pd.DataFrame:
+    """Cross-validate one model on each feature set and scheme, and save everything.
+
+    Writes to RESULTS_DIR/<model_name>/: predictions__<set>__<scheme>.csv, metrics.csv
+    and metrics.json.
+
+    Args:
+        model_name (str): Folder name for the results, e.g. "persistence".
+        make_model (Callable): Returns a new, unfitted classifier.
+        feature_sets (Iterable[str] | None): Feature sets to run; all of FEATURE_SETS if None.
+        schemes (Iterable[str]): Validation schemes to run.
+
+    Returns:
+        pandas.DataFrame: One row of scores per feature set and scheme.
+    """
+    table, _ = build_weekly()
+    out_dir = RESULTS_DIR / model_name
+    out_dir.mkdir(parents=True, exist_ok=True)
+    summary = []
+    for fs in feature_sets or FEATURE_SETS:
+        for scheme in schemes:
+            pred = cross_validate(make_model, fs, scheme, table)
+            tag = f"{fs}__{scheme}"
+            pred.to_csv(out_dir / f"predictions__{tag}.csv")
+            summary.append(dict(model=model_name, feature_set=fs, scheme=scheme, **summarise_predictions(pred)))
+    summary = pd.DataFrame(summary)
+    summary.to_csv(out_dir / "metrics.csv", index=False)
+    with open(out_dir / "metrics.json", "w") as fh:
+        json.dump(summary.to_dict(orient="records"), fh, indent=2, default=float)
+    print(f"\n=== {model_name} ===")
+    print(summary[SUMMARY_COLUMNS].round(3).to_string(index=False))
+    return summary

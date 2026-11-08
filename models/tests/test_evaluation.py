@@ -1,4 +1,6 @@
 """Unit tests for common/evaluation.py, on a small made-up weekly table."""
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -53,3 +55,15 @@ def test_cross_validate_maps_probabilities_when_a_class_is_missing_in_training(t
     t = table.assign(target=table["target"].replace(1.0, 0.0))     # no at-risk weeks at all
     p = evaluation.cross_validate(lambda: DummyClassifier(strategy="prior"), "kb_only", "forward", t)
     assert (p["p_at_risk"] == 0).all() and (p["p_bloom"] > 0).all()
+
+
+def test_run_model_saves_predictions_and_metrics(table, tmp_path, monkeypatch):
+    monkeypatch.setattr(evaluation, "build_weekly", lambda: (table, None))
+    monkeypatch.setattr(evaluation, "RESULTS_DIR", tmp_path)
+    summary = evaluation.run_model("persistence", RepeatLastClass, feature_sets=["kb_only"])
+    out = tmp_path / "persistence"
+    assert summary[["feature_set", "scheme"]].values.tolist() == [["kb_only", "loyo"], ["kb_only", "forward"], ["kb_only", "holdout"]]
+    for scheme in ("loyo", "forward", "holdout"):
+        assert (out / f"predictions__kb_only__{scheme}.csv").exists()
+    assert pd.read_csv(out / "metrics.csv").shape[0] == 3
+    assert len(json.loads((out / "metrics.json").read_text())) == 3
