@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-BASES = ["make_logistic_regression"]
-HYBRIDS = ["make_hybrid_lr"]
+BASES = ["make_logistic_regression", "make_xgboost"]
+HYBRIDS = ["make_hybrid_lr", "make_hybrid_xgb"]
 MODELS = Path(__file__).resolve().parents[1]
 
 
