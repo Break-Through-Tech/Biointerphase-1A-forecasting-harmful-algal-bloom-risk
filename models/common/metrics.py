@@ -1,7 +1,9 @@
 """Scores for the three-class weekly forecast.
 
 Macro-F1 is the main score, so the rare at-risk and bloom weeks count as much as
-no-bloom weeks. Accuracy and Cohen's kappa are also reported.
+no-bloom weeks. Accuracy and Cohen's kappa are also reported. Medina et al. (2024,
+§2.4) note that a forecast lagging behind reality can score well on both yet "miss the
+onset of K. brevis blooms"; bloom onsets measure that.
 """
 import numpy as np
 import pandas as pd
@@ -11,6 +13,34 @@ from sklearn.metrics import (accuracy_score, average_precision_score, balanced_a
 from .config import CLASS_NAMES
 
 LABELS = [0, 1, 2]
+
+
+def find_bloom_onsets(y_true: pd.Series, quiet_weeks: int = 4) -> list[pd.Timestamp]:
+    """Find the weeks where a bloom starts after a quiet spell.
+
+    A bloom onset is a week observed as bloom (class 2) with no bloom observed in the
+    `quiet_weeks` weeks before it.
+
+    Args:
+        y_true (pandas.Series): Observed class per week, indexed by week-ending date.
+        quiet_weeks (int): Bloom-free weeks needed before a bloom counts as a new onset.
+
+    Returns:
+        list[pandas.Timestamp]: The onset weeks, in date order.
+
+    Example:
+        >>> y = pd.Series([0, 2, 2, 0, 0, 0, 0, 2],
+        ...               index=pd.date_range("2020-01-05", periods=8, freq="W-SUN"))
+        >>> [d.date().isoformat() for d in find_bloom_onsets(y)]
+        ['2020-01-12', '2020-02-23']
+    """
+    onsets, last_bloom = [], None
+    for week, cls in y_true.items():
+        if cls == 2:
+            if last_bloom is None or (week - last_bloom).days >= 7 * (quiet_weeks + 1):
+                onsets.append(week)
+            last_bloom = week
+    return onsets
 
 
 def compute_scores(y_true: pd.Series, y_pred: pd.Series, proba: np.ndarray | None = None) -> dict:

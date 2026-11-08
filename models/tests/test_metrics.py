@@ -3,7 +3,19 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from common.metrics import compute_scores
+from common.metrics import compute_scores, find_bloom_onsets
+
+WEEKS = pd.date_range("2020-01-05", periods=8, freq="W-SUN")
+
+
+def test_find_bloom_onsets_needs_four_quiet_weeks_between_blooms():
+    y = pd.Series([0, 2, 2, 0, 0, 0, 0, 2], index=WEEKS)
+    assert find_bloom_onsets(y) == [WEEKS[1], WEEKS[7]]
+    assert find_bloom_onsets(y, quiet_weeks=5) == [WEEKS[1]]
+
+
+def test_find_bloom_onsets_ignores_at_risk_weeks():
+    assert find_bloom_onsets(pd.Series([0, 1, 1, 0], index=WEEKS[:4])) == []
 
 
 def test_compute_scores_perfect_forecast():
