@@ -3,7 +3,7 @@
 Macro-F1 is the main score, so the rare at-risk and bloom weeks count as much as
 no-bloom weeks. Accuracy and Cohen's kappa are also reported. Medina et al. (2024,
 §2.4) note that a forecast lagging behind reality can score well on both yet "miss the
-onset of K. brevis blooms"; bloom onsets measure that.
+onset of K. brevis blooms"; bloom onsets and escalations measure that.
 """
 import numpy as np
 import pandas as pd
@@ -104,3 +104,40 @@ def score_onsets(predictions: pd.DataFrame) -> dict:
     p = predictions.loc[onsets, "y_pred"]
     return dict(n_onsets=len(onsets), onsets_caught_bloom=int((p == 2).sum()),
                 onsets_caught_any_warning=int((p >= 1).sum()))
+
+
+def summarise_predictions(predictions: pd.DataFrame) -> dict:
+    """Score out-of-fold predictions, including onsets and escalations.
+
+    An escalation is a quiet week (last observed class = no bloom) whose label is at
+    risk or bloom. Persistence always says "still quiet" there, so escalation recall
+    shows what a model adds beyond repeating last week.
+
+    Args:
+        predictions (pandas.DataFrame): Output of evaluation.cross_validate: y_true,
+            y_pred, p_no_bloom, p_at_risk, p_bloom and last_class, indexed by week.
+
+    Returns:
+        dict: Everything from compute_scores and score_onsets, plus
+        agrees_with_persistence (share of weeks forecast as the last observed class),
+        n_quiet_weeks, n_escalations, escalation_recall and escalation_precision.
+
+    Example:
+        >>> p = pd.DataFrame({"y_true": [0, 1, 2], "y_pred": [0, 1, 2], "last_class": [0, 0, 2],
+        ...                   "p_no_bloom": [.8, .2, .1], "p_at_risk": [.1, .7, .2], "p_bloom": [.1, .1, .7]},
+        ...                  index=pd.date_range("2020-01-05", periods=3, freq="W-SUN"))
+        >>> s = summarise_predictions(p)
+        >>> s["n_escalations"], s["escalation_recall"], round(s["agrees_with_persistence"], 2)
+        (1, 1.0, 0.67)
+    """
+    proba = predictions[["p_no_bloom", "p_at_risk", "p_bloom"]].to_numpy()
+    m = compute_scores(predictions["y_true"], predictions["y_pred"], proba)
+    m.update(score_onsets(predictions))
+    m["agrees_with_persistence"] = float((predictions["y_pred"] == predictions["last_class"]).mean())
+    quiet = predictions[predictions["last_class"] == 0]
+    esc_true, esc_pred = quiet["y_true"] >= 1, quiet["y_pred"] >= 1
+    m["n_quiet_weeks"] = int(len(quiet))
+    m["n_escalations"] = int(esc_true.sum())
+    m["escalation_recall"] = float(recall_score(esc_true, esc_pred, zero_division=0))
+    m["escalation_precision"] = float(precision_score(esc_true, esc_pred, zero_division=0))
+    return m

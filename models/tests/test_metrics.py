@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from common.metrics import compute_scores, find_bloom_onsets, score_onsets
+from common.metrics import compute_scores, find_bloom_onsets, score_onsets, summarise_predictions
 
 WEEKS = pd.date_range("2020-01-05", periods=8, freq="W-SUN")
 
@@ -42,3 +42,13 @@ def test_compute_scores_adds_ranking_scores_when_probabilities_are_given():
 def test_score_onsets_counts_bloom_and_any_warning():
     p = pd.DataFrame({"y_true": [0, 2, 0, 0, 0, 0, 0, 2], "y_pred": [0, 2, 0, 0, 0, 0, 0, 1]}, index=WEEKS)
     assert score_onsets(p) == {"n_onsets": 2, "onsets_caught_bloom": 1, "onsets_caught_any_warning": 2}
+
+
+def test_summarise_predictions_scores_escalations_in_quiet_weeks_only():
+    p = pd.DataFrame({"y_true": [0, 1, 2, 2], "y_pred": [0, 0, 2, 2], "last_class": [0, 0, 0, 2],
+                      "p_no_bloom": [.8, .6, .1, .1], "p_at_risk": [.1, .3, .2, .2], "p_bloom": [.1, .1, .7, .7]},
+                     index=WEEKS[:4])
+    s = summarise_predictions(p)
+    assert s["n_quiet_weeks"] == 3 and s["n_escalations"] == 2
+    assert s["escalation_recall"] == 0.5 and s["escalation_precision"] == 1.0
+    assert s["agrees_with_persistence"] == 0.75
