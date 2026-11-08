@@ -2,7 +2,7 @@
 import pandas as pd
 import pytest
 
-from common.validation import FORWARD_FIRST_TEST_YEAR, make_folds, select_labelled_rows
+from common.validation import FORWARD_FIRST_TEST_YEAR, HOLDOUT_YEARS, make_folds, select_labelled_rows
 
 
 def weekly_table(start="2013-08-04", end="2018-07-29", horizon=1):
@@ -47,6 +47,22 @@ def test_purging_removes_the_last_h_training_weeks_before_the_test_year(horizon)
     purged = lab.index[earlier & ~tr]
     assert len(purged) == horizon
     assert (purged == lab.index[earlier][-horizon:]).all()
+
+
+def test_holdout_tests_the_last_years_once_and_trains_only_on_earlier_years():
+    lab = select_labelled_rows(weekly_table())
+    folds = list(make_folds(lab, "holdout"))
+    assert len(folds) == 1 and HOLDOUT_YEARS == 3
+    first, tr, te = folds[0]
+    assert sorted(lab["bloom_year"][te].unique()) == [2016, 2017, 2018] and first == 2016
+    assert (lab["bloom_year"][tr] < 2016).all()
+
+
+@pytest.mark.parametrize("horizon", [1, 4])
+def test_holdout_purges_the_last_h_training_weeks(horizon):
+    lab = select_labelled_rows(weekly_table(horizon=horizon))
+    _, tr, _ = next(make_folds(lab, "holdout"))
+    assert (lab["bloom_year"] < 2016).sum() - tr.sum() == horizon
 
 
 def test_no_purging_without_target_week():

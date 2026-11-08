@@ -1,6 +1,6 @@
 """Validation folds that split the weekly table by bloom year.
 
-Both schemes split by August–July bloom year, so one red-tide season never sits in
+Every scheme splits by August–July bloom year, so one red-tide season never sits in
 both training and test data (a random split would leak next week's answer, because
 neighbouring weeks are nearly identical):
 
@@ -10,6 +10,8 @@ neighbouring weeks are nearly identical):
   loyo     leave one bloom year out: each year is tested once, training on all the
            others, including later years. Used to compare with Medina et al. (2024),
            who split their data the same way.
+  holdout  final-years hold-out: train once on every year before the last
+           HOLDOUT_YEARS bloom years and test on those years, as Li et al. (2021) did.
 
 Chart of the forward-chaining folds: models/figures/forward_chaining_folds.png
 """
@@ -21,7 +23,8 @@ import pandas as pd
 from .dates import assign_bloom_year
 
 FORWARD_FIRST_TEST_YEAR = 2016
-SCHEMES = ("forward", "loyo")
+HOLDOUT_YEARS = 3
+SCHEMES = ("forward", "loyo", "holdout")
 
 
 def select_labelled_rows(table: pd.DataFrame) -> pd.DataFrame:
@@ -56,7 +59,7 @@ def make_folds(labelled: pd.DataFrame, scheme: str) -> Iterator[tuple[int, np.nd
     Args:
         labelled (pandas.DataFrame): Output of select_labelled_rows. If it has a
             "target_week" column (the week each label was observed), purging is applied.
-        scheme (str): "forward" or "loyo" (see the module docstring).
+        scheme (str): "forward", "loyo" or "holdout" (see the module docstring).
 
     Returns:
         Iterator[tuple[int, numpy.ndarray, numpy.ndarray]]: For each fold, its first
@@ -74,7 +77,9 @@ def make_folds(labelled: pd.DataFrame, scheme: str) -> Iterator[tuple[int, np.nd
     if scheme not in SCHEMES:
         raise ValueError(f"unknown scheme {scheme!r}: use one of {SCHEMES}")
     years = sorted(labelled["bloom_year"].unique())
-    if scheme == "forward":
+    if scheme == "holdout":
+        splits = [years[-HOLDOUT_YEARS:]]
+    elif scheme == "forward":
         splits = [[y] for y in years if y >= FORWARD_FIRST_TEST_YEAR]
     else:
         splits = [[y] for y in years]
