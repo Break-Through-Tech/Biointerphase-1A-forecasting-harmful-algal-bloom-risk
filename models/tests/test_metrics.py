@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from common.metrics import compute_scores, find_bloom_onsets
+from common.metrics import compute_scores, find_bloom_onsets, score_onsets
 
 WEEKS = pd.date_range("2020-01-05", periods=8, freq="W-SUN")
 
@@ -37,3 +37,8 @@ def test_compute_scores_adds_ranking_scores_when_probabilities_are_given():
     s = compute_scores(y, y, np.eye(3))
     assert s["roc_auc_ovr"] == 1.0 and s["pr_auc_bloom"] == 1.0
     assert "roc_auc_ovr" not in compute_scores(y, y, np.full((3, 3), np.nan))
+
+
+def test_score_onsets_counts_bloom_and_any_warning():
+    p = pd.DataFrame({"y_true": [0, 2, 0, 0, 0, 0, 0, 2], "y_pred": [0, 2, 0, 0, 0, 0, 0, 1]}, index=WEEKS)
+    assert score_onsets(p) == {"n_onsets": 2, "onsets_caught_bloom": 1, "onsets_caught_any_warning": 2}

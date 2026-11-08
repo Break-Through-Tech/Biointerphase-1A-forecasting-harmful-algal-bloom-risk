@@ -81,3 +81,26 @@ def compute_scores(y_true: pd.Series, y_pred: pd.Series, proba: np.ndarray | Non
         m["roc_auc_ovr"] = roc_auc_score(y_true, proba, multi_class="ovr", labels=LABELS)
         m["pr_auc_bloom"] = average_precision_score(np.asarray(y_true) == 2, proba[:, 2])
     return m
+
+
+def score_onsets(predictions: pd.DataFrame) -> dict:
+    """Count how many bloom onsets got a bloom forecast or any warning.
+
+    Args:
+        predictions (pandas.DataFrame): Out-of-fold predictions with y_true and y_pred,
+            indexed by week (output of evaluation.cross_validate).
+
+    Returns:
+        dict: n_onsets, onsets_caught_bloom (forecast bloom) and
+        onsets_caught_any_warning (forecast at risk or bloom).
+
+    Example:
+        >>> p = pd.DataFrame({"y_true": [0, 2], "y_pred": [0, 1]},
+        ...                  index=pd.date_range("2020-01-05", periods=2, freq="W-SUN"))
+        >>> score_onsets(p)
+        {'n_onsets': 1, 'onsets_caught_bloom': 0, 'onsets_caught_any_warning': 1}
+    """
+    onsets = find_bloom_onsets(predictions["y_true"])
+    p = predictions.loc[onsets, "y_pred"]
+    return dict(n_onsets=len(onsets), onsets_caught_bloom=int((p == 2).sum()),
+                onsets_caught_any_warning=int((p >= 1).sum()))
