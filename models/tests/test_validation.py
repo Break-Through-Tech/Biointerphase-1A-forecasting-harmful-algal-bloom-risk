@@ -30,6 +30,15 @@ def test_forward_folds_start_in_2016_and_train_only_on_earlier_years():
         assert (lab["bloom_year"][te] == year).all()
 
 
+def test_loyo_folds_cover_every_year_and_train_on_the_others():
+    lab = select_labelled_rows(weekly_table())
+    folds = list(make_folds(lab, "loyo"))
+    assert [y for y, _, _ in folds] == sorted(lab["bloom_year"].unique())
+    for year, tr, te in folds:
+        assert not (tr & te).any()
+        assert (lab["bloom_year"][tr] != year).all()
+
+
 @pytest.mark.parametrize("horizon", [1, 2, 4])
 def test_purging_removes_the_last_h_training_weeks_before_the_test_year(horizon):
     lab = select_labelled_rows(weekly_table(horizon=horizon))

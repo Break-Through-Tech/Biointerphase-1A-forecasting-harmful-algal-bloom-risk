@@ -1,12 +1,15 @@
 """Validation folds that split the weekly table by bloom year.
 
-Folds split by August–July bloom year, so one red-tide season never sits in both
-training and test data (a random split would leak next week's answer, because
+Both schemes split by August–July bloom year, so one red-tide season never sits in
+both training and test data (a random split would leak next week's answer, because
 neighbouring weeks are nearly identical):
 
   forward  forward-chaining, the main scheme: for each test year from 2016 onward,
            train on every earlier year and test on that year. This matches real use:
            train on the past, forecast the coming year.
+  loyo     leave one bloom year out: each year is tested once, training on all the
+           others, including later years. Used to compare with Medina et al. (2024),
+           who split their data the same way.
 
 Chart of the forward-chaining folds: models/figures/forward_chaining_folds.png
 """
@@ -18,7 +21,7 @@ import pandas as pd
 from .dates import assign_bloom_year
 
 FORWARD_FIRST_TEST_YEAR = 2016
-SCHEMES = ("forward",)
+SCHEMES = ("forward", "loyo")
 
 
 def select_labelled_rows(table: pd.DataFrame) -> pd.DataFrame:
@@ -53,7 +56,7 @@ def make_folds(labelled: pd.DataFrame, scheme: str) -> Iterator[tuple[int, np.nd
     Args:
         labelled (pandas.DataFrame): Output of select_labelled_rows. If it has a
             "target_week" column (the week each label was observed), purging is applied.
-        scheme (str): "forward" (see the module docstring).
+        scheme (str): "forward" or "loyo" (see the module docstring).
 
     Returns:
         Iterator[tuple[int, numpy.ndarray, numpy.ndarray]]: For each fold, its first
@@ -71,12 +74,15 @@ def make_folds(labelled: pd.DataFrame, scheme: str) -> Iterator[tuple[int, np.nd
     if scheme not in SCHEMES:
         raise ValueError(f"unknown scheme {scheme!r}: use one of {SCHEMES}")
     years = sorted(labelled["bloom_year"].unique())
-    splits = [[y] for y in years if y >= FORWARD_FIRST_TEST_YEAR]
+    if scheme == "forward":
+        splits = [[y] for y in years if y >= FORWARD_FIRST_TEST_YEAR]
+    else:
+        splits = [[y] for y in years]
     label_year = (assign_bloom_year(pd.DatetimeIndex(labelled["target_week"]))
                   if "target_week" in labelled else None)
     for test_years in splits:
         test = labelled["bloom_year"].isin(test_years)
-        train = labelled["bloom_year"] < min(test_years)
+        train = ~test if scheme == "loyo" else labelled["bloom_year"] < min(test_years)
         if label_year is not None:
             train = train & ~pd.Series(np.isin(label_year, test_years), index=labelled.index)
         yield int(min(test_years)), train.to_numpy(), test.to_numpy()
