@@ -4,15 +4,19 @@ Cross-validation trains a fresh model per test year and keeps only its predictio
 This script instead fits each model, on each of its feature sets, to every labelled
 week and saves it with the feature columns it expects.
 
-Run from the models/ folder, once per horizon:
-    HAB_HORIZON=1 python save_final_models.py
-Writes results/h<H>w/<model>/final__<feature_set>.joblib. Running it again, for
-example after the data are updated, overwrites the saved files. Load one with:
+Run from the models/ folder, once per horizon (HAB_HORIZON, default 1):
+    python save_final_models.py                 # both hybrids
+    python save_final_models.py hybrid_xgb      # one hybrid
+run_pipeline.py runs it for every horizon. Writes
+results/h<H>w/<model>/final__<feature_set>.joblib. Running it again, for example after
+the data or settings change, overwrites the saved files. Load one with:
     bundle = joblib.load("results/h1w/hybrid_lr/final__kb_only.joblib")
     bundle["model"].predict(weekly_table[bundle["features"]])
+Each saved file also keeps the model_config.toml settings it was trained with.
 Loading needs the same scikit-learn and xgboost versions as requirements.txt.
 """
 import importlib.util
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -21,11 +25,9 @@ import pandas as pd
 
 from common.config import HORIZON_WEEKS, MODELS_ROOT, RESULTS_DIR
 from common.feature_sets import list_feature_columns
+from common.model_config import load_model_config
 from common.validation import select_labelled_rows
 from common.weekly import build_weekly
-
-HYBRID_SETS = ["kb_only", "long", "full"]
-
 
 def load_train_module(folder: str):
     """Load a model folder's train.py by path (a folder named xgboost would hide the package).
@@ -43,14 +45,13 @@ def load_train_module(folder: str):
 
 
 def list_models() -> dict[str, tuple[Callable, list[str]]]:
-    """List every model to save with its factory and feature sets, matching the results folders.
+    """List every model to save with its factory and the feature sets in model_config.toml.
 
     Returns:
         dict[str, tuple[Callable, list[str]]]: Results folder name -> (make_model, feature sets).
     """
-    hybrid = load_train_module("hybrid_escalation")
-    return {"hybrid_lr": (hybrid.make_hybrid_lr, HYBRID_SETS),
-            "hybrid_xgb": (hybrid.make_hybrid_xgb, HYBRID_SETS)}
+    sets = load_model_config()["run"]["feature_sets"]
+    return {name: (make, sets) for name, make in load_train_module("hybrid_escalation").HYBRIDS.items()}
 
 
 def fit_final_model(make_model: Callable, table: pd.DataFrame, feature_set: str) -> dict:
@@ -78,9 +79,12 @@ def fit_final_model(make_model: Callable, table: pd.DataFrame, feature_set: str)
 
 if __name__ == "__main__":
     table, _ = build_weekly()
-    for name, (make_model, sets) in list_models().items():
+    models = list_models()
+    for name in sys.argv[1:] or models:
+        make_model, sets = models[name]
         for fs in sets:
             bundle = fit_final_model(make_model, table, fs)
+            bundle["settings"] = load_model_config()
             path = Path(RESULTS_DIR / name / f"final__{fs}.joblib")
             path.parent.mkdir(parents=True, exist_ok=True)
             joblib.dump(bundle, path, compress=3)

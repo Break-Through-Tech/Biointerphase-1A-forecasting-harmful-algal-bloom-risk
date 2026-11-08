@@ -2,9 +2,13 @@
 
 Two versions: a logistic regression base (Hybrid LR) and an XGBoost base (Hybrid XGB).
 The escalation threshold is tuned on the training years only (see
-common/estimators/persistence_escalation.py).
+common/estimators/persistence_escalation.py). Settings are read from
+models/model_config.toml.
 
-Run from the models/ folder: python hybrid_escalation/train.py
+Run from the models/ folder, for one horizon (HAB_HORIZON, default 1):
+    python hybrid_escalation/train.py                 # both hybrids
+    python hybrid_escalation/train.py hybrid_xgb      # one hybrid
+To run every horizon and retrain the saved models, use run_pipeline.py.
 """
 import sys
 from pathlib import Path
@@ -18,19 +22,15 @@ from sklearn.preprocessing import StandardScaler  # noqa: E402
 
 from common.estimators import BalancedXGB, PersistencePlusEscalation  # noqa: E402
 from common.evaluation import run_model  # noqa: E402
+from common.model_config import load_model_config  # noqa: E402
 
-FEATURE_SETS = ["kb_only", "long", "full"]
 
-
-def make_logistic_regression(C: float = 0.1) -> Pipeline:
+def make_logistic_regression() -> Pipeline:
     """Return median imputation, scaling and a class-balanced logistic regression.
 
     Missing values are filled and features scaled inside each training fold, so test
-    years never influence either step.
-
-    Args:
-        C (float): Inverse L2 penalty strength. 0.1 is a strong penalty, because there
-            are about 740 labelled weeks and up to 60 correlated features.
+    years never influence either step. C and max_iter come from the
+    [logistic_regression] section of model_config.toml.
 
     Returns:
         sklearn.pipeline.Pipeline: The unfitted model.
@@ -39,32 +39,19 @@ def make_logistic_regression(C: float = 0.1) -> Pipeline:
         # add_indicator: "this source was missing this week" can itself be informative.
         SimpleImputer(strategy="median", add_indicator=True, keep_empty_features=True),
         StandardScaler(),
-        LogisticRegression(C=C, class_weight="balanced", max_iter=5000),
+        LogisticRegression(class_weight="balanced", **load_model_config()["logistic_regression"]),
     )
 
 
 def make_xgboost() -> BalancedXGB:
     """Return a small, class-balanced XGBoost model.
 
-    Kept shallow and slow-learning (300 trees of depth 3, learning rate 0.05) because
-    there are only about 740 labelled weeks.
+    Settings come from the [xgboost] section of model_config.toml.
 
     Returns:
         BalancedXGB: The unfitted model.
     """
-    return BalancedXGB(
-        n_estimators=300,
-        max_depth=3,
-        learning_rate=0.05,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        min_child_weight=2,
-        reg_lambda=1.0,
-        objective="multi:softprob",
-        eval_metric="mlogloss",
-        n_jobs=4,
-        random_state=42,
-    )
+    return BalancedXGB(objective="multi:softprob", eval_metric="mlogloss", **load_model_config()["xgboost"])
 
 
 def make_hybrid_lr() -> PersistencePlusEscalation:
@@ -73,7 +60,7 @@ def make_hybrid_lr() -> PersistencePlusEscalation:
     Returns:
         PersistencePlusEscalation: The unfitted model.
     """
-    return PersistencePlusEscalation(make_logistic_regression)
+    return PersistencePlusEscalation(make_logistic_regression, beta=load_model_config()["hybrid"]["beta"])
 
 
 def make_hybrid_xgb() -> PersistencePlusEscalation:
@@ -82,9 +69,12 @@ def make_hybrid_xgb() -> PersistencePlusEscalation:
     Returns:
         PersistencePlusEscalation: The unfitted model.
     """
-    return PersistencePlusEscalation(make_xgboost)
+    return PersistencePlusEscalation(make_xgboost, beta=load_model_config()["hybrid"]["beta"])
+
+
+HYBRIDS = {"hybrid_lr": make_hybrid_lr, "hybrid_xgb": make_hybrid_xgb}
 
 
 if __name__ == "__main__":
-    run_model("hybrid_lr", make_hybrid_lr, feature_sets=FEATURE_SETS)
-    run_model("hybrid_xgb", make_hybrid_xgb, feature_sets=FEATURE_SETS)
+    for name in sys.argv[1:] or HYBRIDS:
+        run_model(name, HYBRIDS[name], feature_sets=load_model_config()["run"]["feature_sets"])

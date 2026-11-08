@@ -1,0 +1,34 @@
+# Model settings. Edit a value, then retrain from the models/ folder:
+#     python run_pipeline.py
+# That reruns cross-validation (results/h<H>w/<model>/metrics.csv) and retrains the
+# saved models (results/h<H>w/<model>/final__<feature_set>.joblib) at every horizon.
+# See models/README.md.
+
+[run]
+# Forecast horizons, in weeks ahead.
+horizons = [1, 2, 4]
+# Feature sets to run (see common/feature_sets.py).
+feature_sets = ["kb_only", "long", "full"]
+
+[hybrid]
+# F-beta used to tune the escalation threshold. 1 weighs missed warnings and false
+# alarms equally; above 1 favours catching more warnings, below 1 fewer false alarms.
+beta = 1.0
+
+[logistic_regression]
+# Inverse L2 penalty strength: smaller = stronger penalty. 0.1 is strong, because
+# there are about 740 labelled weeks and up to 60 correlated features.
+C = 0.1
+max_iter = 5000
+
+[xgboost]
+# Kept small and slow-learning because there are only about 740 labelled weeks.
+n_estimators = 300        # number of trees
+max_depth = 3             # depth of each tree
+learning_rate = 0.05      # how much each tree corrects the previous ones
+subsample = 0.8           # share of weeks each tree sees
+colsample_bytree = 0.8    # share of features each tree sees
+min_child_weight = 2
+reg_lambda = 1.0          # L2 penalty on leaf weights
+n_jobs = 4                # CPU threads
+random_state = 42
