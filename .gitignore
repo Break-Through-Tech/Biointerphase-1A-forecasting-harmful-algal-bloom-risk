@@ -16,3 +16,6 @@ models/notebooks/outputs/cleaned/*
 !models/notebooks/outputs/cleaned/merged_weekly_sarasota.csv
 !models/notebooks/outputs/cleaned/cleaning_log.csv
 !models/notebooks/outputs/cleaned/README.md
+
+# Cross-validation predictions (regenerable with models/run_pipeline.py)
+models/results/*/*/predictions__*.csv
